@@ -95,8 +95,42 @@ put('C_existing',  0,              'ASSUMED', 'Project rule: existing CCTV / dro
 %% ---- 3. ASSUMED block (stated by the brief / DAS-map README, not a table value) ---------------------------
 put('AC0',          0.98, 'ASSUMED', 'AC0 = AD0 = 98% (project brief and DAS-map README "project target, approved"); the table has no AC0 row');
 put('N_drone_avail', num('N_drone_avail'), 'ASSUMED', 'N_drone_avail = 3 (table: ILLUSTRATIVE; real number not public)');
-put('N_CCTV_illustrative', 16, 'ASSUMED', 'Loc_existing: 16 cameras, ILLUSTRATIVE (one per major road crossing, rest < 500 m from roads)');
-put('road_snap_km', 0.5, 'ASSUMED', 'Loc_existing: extra cameras only within 500 m of a road (from the table note)');
+put('road_snap_km', 0.5, 'ASSUMED', 'filler cameras only within 500 m of a road (table row Loc_existing, DAS-map method)');
+
+%% ---- 3b. EXISTING ASSETS (all counts / places are parameters: edit HERE only) ------------------------------------
+% The DAS-map counts (16 cameras, 3 drones, 5 patrols) are ILLUSTRATIVE and NOT used. Realistic basis (official sources,
+% BibTeX keys in the project .bib): 6 entrance checkpoints [alwatan_checkpoints]; 16 cameras on the vehicle lanes of the
+% Al-Shumaisi checkpoint [okaz_shumaisi] -> assumed ~16 cameras per checkpoint; 32 interdiction points on the outskirts and
+% access roads [ajel_32points], camera count per point NOT published; drones used against unauthorized entry, number
+% NOT published [yenisafak2026drones].
+A = struct();
+mk = @(key, en, ar, pat, hw, conf, inc, why) struct('key', key, 'name_en', en, 'name_ar', ar, 'road_pattern', pat, ...
+    'highway', {hw}, 'match_confidence', conf, 'include', inc, 'include_reason', why, 'offset_m', NaN);
+% road_pattern: regex tested on the OSM "name" + "name:en" of each way (DAS-map roads_osm.json). The checkpoint position is
+% the crossing of the matched road with the boundary (project lead's rule). offset_m = distance of the real checkpoint from that
+% crossing ALONG the road (NaN = unknown -> treated as 0). A checkpoint farther than site_near_boundary_m is excluded.
+A.checkpoints = [ ...
+    mk('shumaisi_new', 'Al-Shumaisi (new)',           'الشميسي الجديد',       'Jeddah.?Makkah Expressway|Makkah-Jeddah Expressway|جدة - مكة السريع', ["motorway"], 'high',   true,  'on the boundary by crossing rule'), ...
+    mk('shumaisi_old', 'Al-Shumaisi old (Hudaybiyah)', 'الشميسي القديم (الحديبية)', 'Old Makkah|Old Mecca|مكة القديم',                                  ["trunk" "primary"], 'medium', true,  'on the boundary by crossing rule'), ...
+    mk('sharaye',      'Al-Sharaye',                  'الشرائع',              'At Taif Road|طريق الأمير سلطان',                                          ["motorway" "trunk"], 'medium', true,  'on the boundary by crossing rule'), ...
+    mk('hada',         'Al-Hada',                     'الهدا',                'Al Hada|الكرا الهدا|الهدا',                                               ["motorway" "trunk" "primary"], 'high', true,  'on the boundary by crossing rule; real distance NOT verified (offset_m unknown)'), ...
+    mk('nawariyah',    'Al-Nawariyah',                'النورية',              'Al Madinah Al Munawarah|طريق المدينة المنورة',                            ["motorway" "trunk" "primary"], 'high', true,  'on the boundary by crossing rule'), ...
+    mk('laith',        'Al-Laith',                    'الليث',                'Al Laith Road|طريق الليث',                                                ["trunk"], 'high',   false, 'project lead: this checkpoint is far from the boundary -> outside the coverage') ];
+A.cams_per_checkpoint     = 16;     % ASSUMED, source-based: 16 cameras at Al-Shumaisi [okaz_shumaisi]
+A.n_interdiction          = 32;     % [ajel_32points]
+A.cams_per_interdiction   = 4;      % PLACEHOLDER: not published; sensitivity 2 and 8
+A.cams_per_interdiction_range = [2 8];
+A.interdiction_road_classes = ["secondary" "tertiary" "primary" "trunk" "motorway" "motorway_link" "trunk_link" "primary_link"];  % ASSUMED: lesser roads first (see place_existing_assets)
+A.site_merge_m            = 1500;   % ASSUMED (DAS-map): crossings closer than this are one site
+A.interdiction_merge_m    = 500;    % ASSUMED: interdiction crossings closer than this are one point (lesser roads are dense; 1.5 km left too few)
+A.site_near_boundary_m    = 2000;   % ASSUMED: a site farther than this from the boundary (offset along the road) is out of the coverage
+A.footprint_m             = v.Cov_CCTV_m;   % ASSUMED: all cameras of one site watch the same lanes -> ONE Cov_CCTV stretch of boundary per site
+A.footprint_range_x       = [1 4];  % sensitivity multipliers of the footprint
+% Drone / patrol scenarios (numbers not published). Drones are detection assets; patrols are RESPONSE / VERIFICATION only
+% (no Pd / Pc in the table) and do NOT enter the AD0 constraint.
+A.scenarios = struct('name', {'low', 'medium', 'high'}, 'N_drone', {3, 6, 12}, 'N_patrol', {5, 15, 30});
+A.scenario_tag = 'ASSUMED (counts not published; low drone count = the 3 of the table row N_drone_avail)';
+A.patrol_role  = 'response/verification (not a detection layer)';
 
 %% ---- 4. PLACEHOLDER block: NOT real values. Edit HERE only. Each one is swept in the sensitivity study. ---
 PH.Pd_DAS     = struct('value', 0.95, 'range', [0.90 0.99], 'why', 'Pd_DAS is TBD (comes from the DAS-Simulation Monte Carlo)');
@@ -137,7 +171,7 @@ opts.hot_min_layers        = 2;
 opts.relax_cold            = false;            % true: scenario with a relaxed target in Cold cells (decision pending)
 opts.drone_time_share      = false;            % true: split a drone's watch time over the cells it serves (sensitivity)
 
-P = struct('v', v, 'tag', tag, 'src', src, 'range', rng, 'raw', raw, 'opts', opts, 'tsvFile', string(tsvFile));
+P = struct('v', v, 'tag', tag, 'src', src, 'range', rng, 'raw', raw, 'opts', opts, 'assets', A, 'tsvFile', string(tsvFile));
 end
 
 function x = parse_number(s)
