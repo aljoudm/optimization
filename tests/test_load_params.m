@@ -30,14 +30,17 @@ for s = {'Pd_DAS','Pc_DAS','Pc_drone','T_charge_min','P_shelter','P0'}, assert(s
 assert(isequal(P.range.Pc_DAS, [0.983 0.993]) && P.range.Pd_DAS(2) == 1.0, 'sensitivity ranges of Pc_DAS / Pd_DAS');
 assert(abs(P.range.C_fiber_per_km(1) - 30350) < 1e-9 && abs(P.range.C_fiber_per_km(2) - 121400) < 1e-9, 'C_fiber sensitivity x0.5 / x2');
 assert(v.AC0 == 0.98 && strcmp(t.AC0, 'TABLE') && isequal(v.lambda_cold_range, [1 2]) && abs(v.FAR_loss - 0.02) < 1e-12, 'AC0, lambda_cold, FAR read from the new rows');
+chk('v_drone_ms', 15); chk('T_launch_s', 10); chk('T_resp_s', 300); chk('A_ver_min', 0.9); chk('R_resp_m', 4350); chk('C_shelter', 0);
+assert(strcmp(t.C_shelter, 'PLACEHOLDER') && strcmp(t.T_resp_s, 'PLACEHOLDER') && strcmp(t.A_ver_min, 'PLACEHOLDER') && strcmp(t.T_launch_s, 'SOURCE-STATED'), 'tags of the response-layer parameters');
+assert(contains(P.src.T_launch_s, 'VERIFY') && isequal(P.range.A_ver_min, [0.8 0.95]) && isequal(P.range.T_resp_s, [180 600]), 'T_launch source note and sensitivity ranges');
 % the table itself: 58 lines (header + 57 rows), 9 columns each, no duplicate FAR row
 L = readlines(P.tsvFile);  L = L(strlength(strtrim(L)) > 0);
-assert(numel(L) == 58, 'table must have header + 57 rows (%d lines)', numel(L));
+assert(numel(L) == 59, 'table must have header + 58 rows (%d lines)', numel(L));
 assert(all(arrayfun(@(s) numel(split(s, char(9))) == 9, L)), 'every row must have 9 columns');
 assert(nnz(startsWith(L, 'FAR' + string(char(9)))) == 1, 'only one FAR row');
 
 % (3) every value has a tag from the allowed list, and a source text
-allowed = {'TABLE','TABLE-DERIVED','ASSUMED','PLACEHOLDER','DERIVED-PROPOSED'};
+allowed = {'TABLE','TABLE-DERIVED','ASSUMED','PLACEHOLDER','DERIVED-PROPOSED','SOURCE-STATED'};
 f = fieldnames(v);
 for k = 1:numel(f)
     assert(isfield(t, f{k}) && ismember(t.(f{k}), allowed), 'missing / bad tag for %s', f{k});

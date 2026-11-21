@@ -56,7 +56,7 @@ v = struct();  tag = struct();  src = struct();  rng = struct();
 cellfun(@need, {'AD0','R_DAS','N_ch_DAS','N_ch_active','P_DAS','C_DAS_int','C_fiber','L_boundary','L_leadin', ...
     'Cov_CCTV','P_CCTV','Pd_CCTV','Pc_CCTV','C_CCTV','Cov_drone','P_drone','T_drone','Pd_drone','C_drone', ...
     'N_drone_avail','cell_size','R_hot','R_cold','N_cells','L_zone','P0','P_shelter','Pd_DAS','Pc_DAS','Pc_drone', ...
-    'Pd_PS','Pc_PS','Cov_PS','P_PS','C_PS','AC0','T_charge','lambda_cold','FAR'});
+    'Pd_PS','Pc_PS','Cov_PS','P_PS','C_PS','AC0','T_charge','lambda_cold','FAR','C_shelter'});
 
 put('AD0',          num('AD0')/100,        'TABLE', 'AD0, status approved');
 put('R_DAS_m',      num('R_DAS')*1e3,      'TABLE', 'R_DAS (20 km option, FEBUS A1-NEO datasheet)');
@@ -140,7 +140,7 @@ A.scenario_tag = 'ASSUMED (counts not published; low drone count = the 3 of the 
 A.patrol_role  = 'response/verification (not a detection layer)';
 
 %% ---- 4. PLACEHOLDERs: values that have NO source. Edit HERE only. Each one is swept in the sensitivity study. ---
-PH.C_shelter  = struct('value', 0,     'range', [0 300000], 'why', 'cabin cost is NOT in the table; 0 means "not costed yet"');
+PH.C_shelter  = struct('value', num('C_shelter'), 'range', [0 300000], 'why', 'MISSING: no cabin cost in any source; the table row C_shelter holds 0 = not costed yet (this under-states C_total)');
 % C_fiber has a number in the table but the reviewers flag it as extremely doubtful and no Saudi figure is published:
 % kept as a PLACEHOLDER with sensitivity x0.5 and x2 (decision of 21 Nov).
 PH.C_fiber_per_km = struct('value', num('C_fiber'), 'range', num('C_fiber') * [0.5 2], ...
@@ -163,6 +163,16 @@ put('Pc_drone', num('Pc_drone'), 'TABLE', 'Pc_drone = 0.89 [khan_uav_thermal: YO
 rng.Pc_drone = [0.80 0.95];                            % ASSUMED sensitivity range
 put('T_charge_min', num('T_charge'), 'TABLE', 'T_charge = 27 min [dji_dock3_specs: 15% to 95% at 25 C]; DJI figure only');
 rng.T_charge_min = [27 60];                            % ASSUMED sensitivity range (60 min was the old placeholder)
+%% ---- 4c. drones as a RESPONSE / VERIFICATION layer (decision of 22 Nov): response-time parameters --------------------------------
+% Drones do not detect. After a DAS alarm a drone from a station within reach verifies the event; detection (AD0) comes from DAS and
+% cameras only. A station reaches a cell if the farthest point of the cell is within R_resp = min(Cov_drone, v_drone*(T_resp - T_launch)).
+put('v_drone_ms', 15, 'SOURCE-STATED', 'Matrice 4D/4TD max horizontal speed 15 m/s: Normal mode, obstacle sensing on, the only mode allowed with DJI Dock 3 (DJI official specs page, key dji_dock3_specs; Sport mode 21 m/s is not available with the Dock)');
+put('T_launch_s', 10, 'SOURCE-STATED', 'dock takeoff time 10 s for DJI Dock 3: SOURCE = reseller page (Advexure, advexure.com/collections/drone-docking-stations/products/dji-dock-3-for-matrice-4d-and-4td), VERIFY on the DJI official page; not on the DJI specs page');
+put('T_resp_s', 300, 'PLACEHOLDER', 'response time within which a drone must reach the cell; PLACEHOLDER linked to T_alert (TBD, Student 1); sensitivity 180-600 s');
+rng.T_resp_s = [180 600];
+put('A_ver_min', 0.9, 'PLACEHOLDER', 'minimum probability that a drone is ready for the verification layer of a Hot cell (one drone = 0.635, two drones at a station = 1.0); PLACEHOLDER, sensitivity 0.8 and 0.95');
+rng.A_ver_min = [0.8 0.95];
+put('R_resp_m', min(v.Cov_drone_m, v.v_drone_ms * (v.T_resp_s - v.T_launch_s)), 'DERIVED-PROPOSED', 'R_resp = min(Cov_drone, v_drone*(T_resp - T_launch))');
 put('P_shelter', num('P_shelter'), 'TABLE', 'P_shelter = 170 W [gsma_coolsure: cooling 30-50% of site load -> 73 to 170 W]; upper bound taken for Makkah heat');
 rng.P_shelter = [73 170];
 lc = str2double(regexp(char(row('lambda_cold').value), '\d+', 'match'));
@@ -189,6 +199,8 @@ opts = struct();
 opts.classification_fusion = 'weighted_vote';  % 'weighted_vote' | 'max' | 'independent_or' (optimistic upper bound)
 opts.hot_layers_rule       = 'pointwise';      % each point of a Hot cell must be covered by >= 2 layers
 opts.hot_min_layers        = 2;
+opts.hot_layer_counting    = 'types';          % kept for compatibility; layers are now: DAS (detection) + verification (camera over the whole cell or drone in reach)
+opts.max_drone_units       = 2;                % ASSUMED: at most this many drone stations count for the verification of one cell
 opts.ac0_definition        = 'classifier';     % 'classifier': AC0 is a requirement on the DAS classifier (Pc_DAS >= AC0, needs DAS in the cell);
                                                % 'system': whole-system accuracy conditional on detection (reported as an extra result)
 opts.relax_cold            = false;           % true: scenario with a relaxed target in Cold cells (decision pending)

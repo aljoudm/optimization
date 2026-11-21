@@ -1,68 +1,69 @@
 function test_run_optimization()
 % TEST_RUN_OPTIMIZATION  The MILP solution is re-checked by an independent routine and against hand-derived bounds.
 here = fileparts(mfilename('fullpath'));   addpath(fullfile(here, '..', 'src'));
-P = load_params();   v = P.v;   cells = load_cells(P);   A = place_existing_assets(P, cells);   M = coverage_model(P, cells, A);
-sc = P.assets.scenarios;
+P = load_params();   P.assets.allow_filler = false;   v = P.v;   cells = load_cells(P);   A = place_existing_assets(P, cells);   M = coverage_model(P, cells, A);
+sc = P.assets.scenarios;   hot = cells.zoneCode == 3;   L = cells.ring.L;
 fprintf('Optimization Toolbox available: %d\n', license('test', 'Optimization_Toolbox'));
+nMin = ceil(L / (v.N_ch_active * v.R_DAS_m));   fullCost = nMin * (v.C_DAS_int + v.C_shelter) + v.C_fiber_per_km * L / 1e3;
 
-%% medium scenario, base values
+%% base case: medium scenario, Pd_DAS 0.969 (below AD0: elastic detection, never infeasible)
 al = run_optimization(cells, P, 'Scenario', sc(2), 'Assets', A, 'Model', M, 'Verbose', false);
-verify(al, cells, P, M, A);
-% hand bounds: every cell needs DAS (classifier requirement), so the fibre covers the whole ring and >= ceil(L / (2 R_DAS)) sites are needed
-L = cells.ring.L;   nMin = ceil(L / (v.N_ch_active * v.R_DAS_m));
-assert(al.n_interrogators == nMin, 'interrogators %d vs hand bound %d', al.n_interrogators, nMin);
-assert(abs(al.fibre_km - L / 1e3) < 1e-6, 'fibre must cover the whole ring');
-assert(abs(al.C_total - (nMin * v.C_DAS_int + v.C_fiber_per_km * L / 1e3)) < 1e-3, 'C_total = %d interrogators + fibre of the whole ring', nMin);
-assert(al.n_violations == 0 && al.feasible, 'medium scenario must be feasible');
-assert(al.drones.total <= sc(2).N_drone, 'drone budget');
-fprintf('medium: C_total %.2f = %d x %.0f + %.2f km x %.0f ; drones %d\n', al.C_total, nMin, v.C_DAS_int, L/1e3, v.C_fiber_per_km, al.drones.total);
+verify(al, cells, P, M);
+% hand bound: without DAS a cell detects with at most f*Pd_CCTV << AD0, so any allocation that minimises the detection shortfall puts DAS everywhere
+assert(max(M.bestPd0) < 0.25, 'without DAS no cell comes near AD0');
+assert(al.cells_with_DAS == cells.n && al.n_interrogators == nMin && abs(al.fibre_km - L/1e3) < 1e-6, 'DAS everywhere: %d interrogators, whole ring', nMin);
+assert(abs(al.C_total - fullCost) < 1e-3, 'C_total = %d interrogators + fibre of the whole ring', nMin);
+assert(al.detection_gap.cells_below_AD0 == cells.n && al.detection_gap.max < 0.0115 && al.detection_gap.max > 0.0105, 'elastic detection gap about 0.011');
+assert(al.drones.total <= sc(2).N_drone && al.hot_verified == 22, 'medium: 6 drones verify 22 of the 36 Hot cells');
+assert(abs(al.A_ver_hot.sum - 22) < 1e-9, 'stage 3: sum of A_ver over Hot cells');
+assert(al.min_drones_no_gap == 14, 'fewest drones that verify every Hot cell (T_resp 300 s)');
+fprintf('medium: C_total %.2f = full DAS; Hot verified %d/36; fewest drones for all Hot %d; detection gap max %.4f\n', al.C_total, al.hot_verified, al.min_drones_no_gap, al.detection_gap.max);
 
-%% low scenario: a solution WITH a gap, 3 cells below AD0, and 4 drones would remove it
-al3 = run_optimization(cells, P, 'Scenario', sc(1), 'Assets', A, 'Model', M, 'Verbose', false);
-verify(al3, cells, P, M, A);
-assert(al3.n_violations == 3 && al3.min_drones_no_gap == 4 && al3.drones.total <= 3, 'low scenario: 3 cells with a gap, 4 drones needed');
-assert(all(al3.cells.Pd(al3.violations) < v.AD0) && all(al3.cells.Pd(al3.violations) > 0.96), 'violating cells keep DAS (Pd just below AD0)');
-fprintf('low: %d cells below AD0 (Pd %s), fewest drones without gap %d\n', al3.n_violations, mat2str(al3.cells.Pd(al3.violations)', 4), al3.min_drones_no_gap);
-
-%% Pd_DAS = 1.0: DAS alone detects; drones are only needed for the 2-layer rule of the Hot cells
-P1 = P;   P1.v.Pd_DAS = 1.0;   M1 = coverage_model(P1, cells, A);
+%% Pd_DAS = 0.98 (= AD0): detection is met by DAS alone, the remaining gap is verification of Hot cells
+P1 = P;   P1.v.Pd_DAS = 0.98;   M1 = coverage_model(P1, cells, A, struct('reach', M.reach, 'stationXY', M.stationXY, 'radius', M.reach_radius));
 al1 = run_optimization(cells, P1, 'Scenario', sc(1), 'Assets', A, 'Model', M1, 'Verbose', false);
-verify(al1, cells, P1, M1, A);
-assert(al1.n_violations == 0 && al1.drones.total <= 3, 'Pd_DAS = 1: low scenario is feasible with <= 3 drones');
-assert(all(al1.cells.drones_serving(cells.zoneCode == 3) >= 1), 'every Hot cell needs a drone layer');
-assert(abs(al1.C_total - al.C_total) < 1e-3, 'cost does not depend on the drones');
-fprintf('Pd_DAS = 1.0: low scenario feasible with %d drones at %d stations\n', al1.drones.total, al1.drones.stations);
+verify(al1, cells, P1, M1);
+assert(al1.detection_gap.cells_below_AD0 == 0 && al1.n_violations == nnz(hot) - al1.hot_verified && al1.hot_verified == 9, 'low scenario, Pd_DAS 0.98: 9 Hot cells verified, the rest is a verification gap');
+assert(abs(al1.C_total - fullCost) < 1e-3, 'cost unchanged');
+%% high scenario with 12 drones
+al2 = run_optimization(cells, P1, 'Scenario', sc(3), 'Assets', A, 'Model', M1, 'Verbose', false);
+verify(al2, cells, P1, M1);
+assert(al2.hot_verified == 34 && al2.drones.total <= 12, 'high: 34 of 36 Hot cells verified');
+% fewer cameras / the case with filler sites must not change the allocation
+Pf = P1;   Pf.assets.allow_filler = true;   Af = place_existing_assets(Pf, cells);   Mf = coverage_model(Pf, cells, Af, struct('reach', M.reach, 'stationXY', M.stationXY, 'radius', M.reach_radius));
+al3 = run_optimization(cells, Pf, 'Scenario', sc(2), 'Assets', Af, 'Model', Mf, 'Verbose', false);
+al4 = run_optimization(cells, P1, 'Scenario', sc(2), 'Assets', A, 'Model', M1, 'Verbose', false);
+assert(abs(al3.C_total - al4.C_total) < 1e-6 && al3.hot_verified == al4.hot_verified, '22 real vs 32 interdiction sites: same result');
+fprintf('low (Pd 0.98): Hot verified %d/36; high: %d/36; 22 vs 32 sites identical\n', al1.hot_verified, al2.hot_verified);
 fprintf('test_run_optimization: all checks passed.\n');
 end
 
-function verify(al, cells, P, M, A)
-% Independent re-check of a solution (does not use the MILP model): requirements per cell, fibre continuity and reach, power, drones.
-v = P.v;   n = cells.n;   runs = cells.runs;   R = numel(runs.cell);   L = cells.ring.L;   pos = (runs.s0 + runs.s1) / 2;
-T = al.cells;
-% (1) each cell: Pd / layers / classification of the chosen state, recomputed from the model arrays
-for i = 1:n
-    x = T.DAS(i);   k = T.drones_serving(i);
-    ok = M.Pd(i, x+1, k+1) >= v.AD0 - 1e-12 && M.layers(i, x+1, k+1) >= M.need(i) && x == 1 && v.Pc_DAS >= v.AC0 - 1e-12;
-    assert(ok == ~T.violates(i), 'cell %d: requirement flag inconsistent', i);
-    if k >= 1, assert(T.station(i) > 0 && al.drones.n(find(ismember(al.drones.station_xy, M.stationXY(T.station(i), :), 'rows'), 1)) >= k, 'cell %d: no station with %d drones', i, k); end
+function verify(al, cells, P, M)
+% Independent re-check of a solution (does not use the MILP model): fibre continuity and reach, cell states, drones, power, cost.
+v = P.v;   n = cells.n;   runs = cells.runs;   R = numel(runs.cell);   L = cells.ring.L;   pos = (runs.s0 + runs.s1) / 2;   T = al.cells;
+st = M.states;
+for i = 1:n                                          % each cell is in a state of the model and the flags agree
+    s = al.cell_state(i);
+    assert(st.x(s) == T.DAS(i) && abs(M.Pd(i, s) - T.Pd(i)) < 1e-12, 'cell %d state', i);
+    assert(T.verified(i) == st.ver(s), 'cell %d verification flag', i);
+    assert(T.violates(i) == ~M.ok(i, s), 'cell %d violation flag', i);
 end
-% (2) the drone station that serves a cell is within reach and holds enough drones; budget
 assert(al.drones.total <= al.scenario.N_drone, 'drone budget exceeded');
-for i = find(T.drones_serving > 0)'
-    assert(M.reach(T.station(i), i), 'cell %d is outside the reach of its station', i);
+assert(all(al.drones.n >= 1 & al.drones.n <= M.K), 'drones per station');
+% a verified cell must have enough stations in reach holding drones: count ready-capacity per cell from the station list
+idx = al.drones.station_index;   levels = al.drones.n;
+for i = find(T.verified)'
+    inReach = M.reach(idx, i);   assert(any(inReach), 'verified cell %d has no station within reach', i);
+    a = 1 - prod(1 - M.A(levels(inReach) + 1));   assert(a >= v.A_ver_min - 1e-9, 'cell %d: ready probability %.3f below A_ver_min', i, a);
 end
-% (3) fibre: DAS cells have fibre on all their runs; every fibre run is reachable from a site with fibre all the way
 z = al.fibre_runs;   y = false(R, 1);   y(al.interrogators.run) = true;
 for i = find(T.DAS)', assert(all(z(cells.cellRuns{i})), 'cell %d: DAS without fibre on all runs', i); end
 Rmax = v.R_DAS_m - v.L_leadin_m;   served = y;
 for k = find(y)'
-    j = k;                                                      % right channel
-    for t = 1:R - 1, j = mod(j, R) + 1;     if mod(runs.s1(j) - pos(k), L) > Rmax + 1e-9 || ~z(j), break; end, served(j) = true; end
-    j = k;                                                      % left channel
-    for t = 1:R - 1, j = mod(j - 2, R) + 1; if mod(pos(k) - runs.s0(j), L) > Rmax + 1e-9 || ~z(j), break; end, served(j) = true; end
+    j = k;   for t = 1:R - 1, j = mod(j, R) + 1;     if mod(runs.s1(j) - pos(k), L) > Rmax + 1e-9 || ~z(j), break; end, served(j) = true; end
+    j = k;   for t = 1:R - 1, j = mod(j - 2, R) + 1; if mod(pos(k) - runs.s0(j), L) > Rmax + 1e-9 || ~z(j), break; end, served(j) = true; end
 end
 assert(all(served(z)), 'some fibre run is not served by any interrogator within R_DAS through continuous fibre');
-% (4) power, cost
 assert((v.P_DAS + v.P_shelter) * nnz(y) < v.P0, 'power constraint');
 assert(abs(al.C_total - (nnz(y) * (v.C_DAS_int + v.C_shelter) + v.C_fiber_per_km * sum(runs.len(z)) / 1e3)) < 1e-6, 'cost');
 end
