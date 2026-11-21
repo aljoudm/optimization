@@ -56,7 +56,7 @@ v = struct();  tag = struct();  src = struct();  rng = struct();
 cellfun(@need, {'AD0','R_DAS','N_ch_DAS','N_ch_active','P_DAS','C_DAS_int','C_fiber','L_boundary','L_leadin', ...
     'Cov_CCTV','P_CCTV','Pd_CCTV','Pc_CCTV','C_CCTV','Cov_drone','P_drone','T_drone','Pd_drone','C_drone', ...
     'N_drone_avail','cell_size','R_hot','R_cold','N_cells','L_zone','P0','P_shelter','Pd_DAS','Pc_DAS','Pc_drone', ...
-    'Pd_PS','Pc_PS','Cov_PS','P_PS','C_PS'});
+    'Pd_PS','Pc_PS','Cov_PS','P_PS','C_PS','AC0','T_charge','lambda_cold','FAR'});
 
 put('AD0',          num('AD0')/100,        'TABLE', 'AD0, status approved');
 put('R_DAS_m',      num('R_DAS')*1e3,      'TABLE', 'R_DAS (20 km option, FEBUS A1-NEO datasheet)');
@@ -93,7 +93,7 @@ put('C_drone_ref', num('C_drone'), 'TABLE', 'C_drone, reference only (existing a
 put('C_existing',  0,              'ASSUMED', 'Project rule: existing CCTV / drones / Point-Sensor Networks have zero capital cost for us');
 
 %% ---- 3. ASSUMED block (stated by the brief / DAS-map README, not a table value) ---------------------------
-put('AC0',          0.98, 'ASSUMED', 'AC0 = AD0 = 98% (project brief and DAS-map README "project target, approved"); the table has no AC0 row');
+% AC0 is read from the table (row AC0), see section 4b.
 put('N_drone_avail', num('N_drone_avail'), 'ASSUMED', 'N_drone_avail = 3 (table: ILLUSTRATIVE; real number not public)');
 put('road_snap_km', 0.5, 'ASSUMED', 'filler cameras only within 500 m of a road (table row Loc_existing, DAS-map method)');
 
@@ -139,37 +139,35 @@ A.scenarios = struct('name', {'low', 'medium', 'high'}, 'N_drone', {3, 6, 12}, '
 A.scenario_tag = 'ASSUMED (counts not published; low drone count = the 3 of the table row N_drone_avail)';
 A.patrol_role  = 'response/verification (not a detection layer)';
 
-%% ---- 4. PLACEHOLDER block: NOT real values. Edit HERE only. Each one is swept in the sensitivity study. ---
-PH.Pd_DAS     = struct('value', 0.95, 'range', [0.90 0.99], 'why', 'Pd_DAS is TBD (comes from the DAS-Simulation Monte Carlo)');
-PH.Pc_DAS     = struct('value', 0.90, 'range', [0.80 0.98], 'why', 'Pc_DAS is TBD (comes from the Stage-1 AI classifier)');
-PH.Pc_drone   = struct('value', 0.85, 'range', [0.80 0.95], 'why', 'Pc_drone is TBD in the table');
-PH.P_shelter  = struct('value', 1000, 'range', [500 3000],  'why', 'P_shelter is TBD (air-conditioning power per cabin, W)');
-PH.T_charge_min = struct('value', 60,  'range', [30 120],   'why', 'drone recharge time is NOT in the table at all (needed for availability)');
+%% ---- 4. PLACEHOLDERs: values that have NO source. Edit HERE only. Each one is swept in the sensitivity study. ---
 PH.C_shelter  = struct('value', 0,     'range', [0 300000], 'why', 'cabin cost is NOT in the table; 0 means "not costed yet"');
-% C_fiber has a number in the table but the reviewers flag it as extremely doubtful -> treated as a placeholder-grade value.
-PH.C_fiber_per_km = struct('value', num('C_fiber'), 'range', [20000 120000], ...
-                           'why', 'table value 60,700 SAR/km has no source and is flagged extremely doubtful');
+% C_fiber has a number in the table but the reviewers flag it as extremely doubtful and no Saudi figure is published:
+% kept as a PLACEHOLDER with sensitivity x0.5 and x2 (decision of 21 Nov).
+PH.C_fiber_per_km = struct('value', num('C_fiber'), 'range', num('C_fiber') * [0.5 2], ...
+                           'why', 'table value 60,700 SAR/km, no published Saudi figure, flagged extremely doubtful; sensitivity x0.5 and x2');
 fn = fieldnames(PH);
 for k = 1:numel(fn)
     put(fn{k}, PH.(fn{k}).value, 'PLACEHOLDER', PH.(fn{k}).why);
     rng.(fn{k}) = PH.(fn{k}).range;
 end
-%% ---- 4b. SOURCE-STATED values (project lead, with the reference key she gave) ------------------------------------
-% These replace the placeholders above. They come from the NEW version of the parameter table. NOTE: the copy of the table in
-% this folder was still the OLD version when this block was written, so the numbers below were typed from the project lead's
-% message, not read from the file. When the new TSV arrives, check these lines against it.
-% Bib keys: zeng2024, liu2016, wang2024, khan_uav_thermal, dji_dock3_specs, gsma_coolsure.
-    function ss(name, value, range, why)               % register a source-stated value and its sensitivity range
-        put(name, value, 'SOURCE-STATED', why);   rng.(name) = range;
-    end
-ss('Pd_DAS',  0.969, [0.969 1.0],   'Pd_DAS = 0.969 [zeng2024]; sensitivity up to 1.0 [liu2016]');
-ss('Pc_DAS',   0.983, [0.983 0.993], 'Pc_DAS = 98.3% (several disturbance points) to 99.3% (one disturbance point) [wang2024]; both ends are run');
-ss('Pc_drone', 0.89,  [0.80 0.95],   'Pc_drone = 0.89 [khan_uav_thermal], a PROXY (UAV thermal human detection), not a measured classifier; earlier placeholder was 0.85 (= Pc_CCTV)');
-ss('T_charge_min', 27, [27 60],      'drone recharge time 27 min [dji_dock3_specs]; earlier placeholder 60');
-ss('P_shelter', 170,  [85 340],      'P_shelter = 170 W [gsma_coolsure]; sensitivity x0.5 and x2');
-rng.C_fiber_per_km = 60700 * [0.5 2];                  % C_fiber stays a PLACEHOLDER (table value, extremely doubtful): sensitivity x0.5 and x2
-put('lambda_cold_range', [1 2], 'SOURCE-STATED', 'lambda_cold = 1-2 events/day per zone (replaces 0); not used by the optimization, kept for the simulation');
-put('FAR_loss', 0.02, 'SOURCE-STATED', 'FAR = 2% as a ratio (1 - precision); not used by the optimization');
+%% ---- 4b. source-based values, read from the table (decisions of 21 Nov) ------------------------------------------
+% Bib keys: zeng2024, liu2016, wang2024, khan_uav_thermal, dji_dock3_specs, gsma_coolsure (additions2.bib).
+put('AC0', num('AC0')/100, 'TABLE', 'AC0 = 98% (project target). Main constraint: Pc_DAS >= AC0 (classifier on the DAS signal); whole-system accuracy is an extra result');
+put('Pd_DAS', num('Pd_DAS'), 'TABLE', 'Pd_DAS = 0.969 [zeng2024: IDR 96.9%, one disturbance site]; field 100% [liu2016] -> sensitivity up to 1.0; to be replaced by the Monte Carlo');
+rng.Pd_DAS = [num('Pd_DAS') 1.0];
+pcr = str2double(regexp(strrep(strrep(char(row('Pc_DAS').value), char(8211), ' '), char(8722), ' '), '\d*\.?\d+', 'match'));
+assert(numel(pcr) == 2, 'load_params:PcDAS', 'Pc_DAS row must hold a range "low - high".');
+put('Pc_DAS', min(pcr), 'TABLE', 'Pc_DAS range 0.983-0.993 [wang2024 via Shao 2025]: 99.3% one disturbance point, 98.3% several; base case = the lower end, both ends are run');
+rng.Pc_DAS = [min(pcr) max(pcr)];
+put('Pc_drone', num('Pc_drone'), 'TABLE', 'Pc_drone = 0.89 [khan_uav_thermal: YOLOv8s on HIT-UAV, precision 0.891]: a PROXY (precision, not accuracy; no animals)');
+rng.Pc_drone = [0.80 0.95];                            % ASSUMED sensitivity range
+put('T_charge_min', num('T_charge'), 'TABLE', 'T_charge = 27 min [dji_dock3_specs: 15% to 95% at 25 C]; DJI figure only');
+rng.T_charge_min = [27 60];                            % ASSUMED sensitivity range (60 min was the old placeholder)
+put('P_shelter', num('P_shelter'), 'TABLE', 'P_shelter = 170 W [gsma_coolsure: cooling 30-50% of site load -> 73 to 170 W]; upper bound taken for Makkah heat');
+rng.P_shelter = [73 170];
+lc = str2double(regexp(char(row('lambda_cold').value), '\d+', 'match'));
+put('lambda_cold_range', lc, 'TABLE', 'lambda_cold = 1-2 events/day per zone (replaces 0); not used by the optimization (simulation input)');
+put('FAR_loss', num('FAR')/100, 'TABLE', 'FAR = 2% as a ratio (1 - precision) [zeng2024 definition]; not used by the optimization');
 % Point-Sensor Networks: every value is TBD in the table -> excluded from the base case (no data, no locations).
 put('use_PS', false, 'ASSUMED', 'Point-Sensor Networks excluded from the base case: all their values are TBD; hooks kept in the code');
 for s = {'Cov_PS','P_PS','Pd_PS','Pc_PS','C_PS'}
@@ -179,11 +177,9 @@ end
 %% ---- 5. derived quantities (formula and its inputs stated) ------------------------------------------------
 put('N_DAS_int_full', ceil(v.L_boundary_m / (v.N_ch_active * v.R_DAS_m)), 'TABLE-DERIVED', ...
     'ceil(L_boundary / (N_ch_active * R_DAS)) = 4 (table row N_DAS_int); upper-bound check only, the MILP decides the number');
-% P0: the table proposes "CCTV-only system covering the same length" (row P0 note). It is a proposal, not a source.
-put('P0', ceil(v.L_boundary_m / v.Cov_CCTV_m) * v.P_CCTV, 'DERIVED-PROPOSED', ...
-    'P0 = ceil(L_boundary / Cov_CCTV) * P_CCTV, the method proposed in the P0 row note (table value itself is TBD)');
-assert(v.P0 == 29100, 'load_params:P0', 'P0 formula must give the 29,100 W stated by the project lead (1455 x 20 W).');
-put('P0', 29100, 'SOURCE-STATED', 'P0 = 29,100 W = CCTV-only system covering the boundary = 1455 x 20 W (project lead; equals the formula in the P0 row note)');
+% P0: the table value (29,100 W) equals the method of the P0 row note: a CCTV-only system covering the same length.
+put('P0', num('P0'), 'TABLE', 'P0 = 29,100 W = ceil(L_boundary / Cov_CCTV) x P_CCTV = 1455 x 20 W (CCTV-only system, row P0)');
+assert(v.P0 == ceil(v.L_boundary_m / v.Cov_CCTV_m) * v.P_CCTV, 'load_params:P0', 'P0 in the table differs from ceil(L_boundary/Cov_CCTV) x P_CCTV.');
 rng.P0 = [0.1 1] * v.P0;
 put('A_drone_1', v.T_drone_min / (v.T_drone_min + v.T_charge_min), 'DERIVED-PROPOSED', ...
     'availability of ONE drone = T_drone / (T_drone + T_charge); T_charge is a PLACEHOLDER');

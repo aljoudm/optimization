@@ -26,12 +26,18 @@ fullCost = 4*636000 + 145.4735*60700;
 assert(abs(fullCost - 11374241.45) < 0.01, 'hand-computed reference cost %.2f', fullCost);
 
 chk('Pd_DAS', 0.969); chk('Pc_DAS', 0.983); chk('Pc_drone', 0.89); chk('T_charge_min', 27); chk('P_shelter', 170); chk('P0', 29100);
-for s = {'Pd_DAS','Pc_DAS','Pc_drone','T_charge_min','P_shelter','P0'}, assert(strcmp(t.(s{1}), 'SOURCE-STATED'), '%s must be SOURCE-STATED', s{1}); end
+for s = {'Pd_DAS','Pc_DAS','Pc_drone','T_charge_min','P_shelter','P0'}, assert(strcmp(t.(s{1}), 'TABLE'), '%s must come from the table', s{1}); end
 assert(isequal(P.range.Pc_DAS, [0.983 0.993]) && P.range.Pd_DAS(2) == 1.0, 'sensitivity ranges of Pc_DAS / Pd_DAS');
 assert(abs(P.range.C_fiber_per_km(1) - 30350) < 1e-9 && abs(P.range.C_fiber_per_km(2) - 121400) < 1e-9, 'C_fiber sensitivity x0.5 / x2');
+assert(v.AC0 == 0.98 && strcmp(t.AC0, 'TABLE') && isequal(v.lambda_cold_range, [1 2]) && abs(v.FAR_loss - 0.02) < 1e-12, 'AC0, lambda_cold, FAR read from the new rows');
+% the table itself: 58 lines (header + 57 rows), 9 columns each, no duplicate FAR row
+L = readlines(P.tsvFile);  L = L(strlength(strtrim(L)) > 0);
+assert(numel(L) == 58, 'table must have header + 57 rows (%d lines)', numel(L));
+assert(all(arrayfun(@(s) numel(split(s, char(9))) == 9, L)), 'every row must have 9 columns');
+assert(nnz(startsWith(L, 'FAR' + string(char(9)))) == 1, 'only one FAR row');
 
 % (3) every value has a tag from the allowed list, and a source text
-allowed = {'TABLE','TABLE-DERIVED','ASSUMED','PLACEHOLDER','DERIVED-PROPOSED','SOURCE-STATED'};
+allowed = {'TABLE','TABLE-DERIVED','ASSUMED','PLACEHOLDER','DERIVED-PROPOSED'};
 f = fieldnames(v);
 for k = 1:numel(f)
     assert(isfield(t, f{k}) && ismember(t.(f{k}), allowed), 'missing / bad tag for %s', f{k});
