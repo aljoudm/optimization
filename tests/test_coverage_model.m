@@ -22,7 +22,7 @@ end
 %% ---- coverage_model ---------------------------------------------------------------------------------------------
 P = load_params();   v = P.v;   cells = load_cells(P);   A = place_existing_assets(P, cells);   M = coverage_model(P, cells, A);
 n = cells.n;   K = M.K;
-assert(K == 3 && abs(M.A1 - 47/107) < tol && abs(M.A(3) - 2*47/107) < tol && M.A(4) == 1, 'drone availability');
+assert(K == 2 && abs(M.A1 - 47/74) < tol && abs(M.A(2) - 47/74) < tol && M.A(3) == 1, 'drone availability (T_charge 27 min)');
 iNo  = find(A.coverFrac == 0, 1);                      % a cell without camera
 iCam = find(A.coverFrac > 0 & A.coverFrac < 1, 1);     % a cell with partial camera coverage
 f = A.coverFrac(iCam);
@@ -59,17 +59,17 @@ assert(size(M.reach, 2) == n && all(any(M.reach, 1)), 'every cell is reachable f
 assert(max(sum(M.reach, 2)) >= 40, 'one station should cover about 40 cells');
 
 %% ---- feasibility report with the current PLACEHOLDERS ----------------------------------------------------------------
-fprintf('Placeholders: Pd_DAS %.2f, Pc_DAS %.2f, Pc_drone %.2f, T_charge %g min -> availability A(1..3) = %.3f %.3f %.3f\n', v.Pd_DAS, v.Pc_DAS, v.Pc_drone, v.T_charge_min, M.A(2:4));
+fprintf('Placeholders: Pd_DAS %.2f, Pc_DAS %.2f, Pc_drone %.2f, T_charge %g min -> availability A(1..K) = %s\n', v.Pd_DAS, v.Pc_DAS, v.Pc_drone, v.T_charge_min, mat2str(M.A(2:end), 3));
 fprintf('Cells for which SOME state meets detection + layers + classification (AD0 = AC0 = %.2f): %d of %d\n', v.AD0, nnz(M.cellOk), n);
 fprintf('Cells for which some state meets detection + layers only (classification reported as a gap)  : %d of %d\n', nnz(M.cellOkDet), n);
 fprintf('Best Pc any state reaches (%s): min %.3f, max %.3f; with the optimistic 1-prod(1-p) bound: max %.3f\n', M.fusion, min(M.bestPc), max(M.bestPc), max(M.Pc_or, [], 'all'));
 % sensitivity: what do Pd_DAS and Pc_DAS have to be for classification to become satisfiable?
 fprintf('Cells that can meet detection + layers + classification, by (Pd_DAS, Pc_DAS):\n');
-for pdd = [0.95 0.98 0.99]
-    for pcd = [0.98 0.99 0.995]
+for pdd = [0.969 1.0]
+    for pcd = [0.983 0.993]
         P2 = P;  P2.v.Pd_DAS = pdd;  P2.v.Pc_DAS = pcd;   M2 = coverage_model(P2, cells, A);
         fprintf('  Pd_DAS %.3f, Pc_DAS %.3f : %3d of %d (Hot: %2d of %d)\n', pdd, pcd, nnz(M2.cellOk), n, nnz(M2.cellOk(hot)), numel(hot));
-        if pdd == 0.99 && pcd == 0.995, assert(nnz(M2.cellOk) == n, 'with a very good DAS every cell must be satisfiable'); end
+        if pdd == 1.0 && pcd == 0.993, assert(nnz(M2.cellOk) == n, 'with a very good DAS every cell must be satisfiable'); end
     end
 end
 fprintf('test_coverage_model: all checks passed.\n');

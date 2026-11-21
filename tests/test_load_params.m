@@ -20,20 +20,25 @@ assert(abs(sum(v.L_zone_km) - 145.5) < 1e-9, 'zone lengths must sum to 145.5 km'
 % (2) derived values recomputed independently
 assert(v.N_DAS_int_full == 4, 'N_DAS_int = ceil(145.4735/40) = 4');
 assert(v.P0 == 1455*20, 'P0 = ceil(1454.735)*20 = 29100 W');
-assert(abs(v.A_drone_1 - 47/(47+60)) < tol, 'availability of one drone');
+assert(abs(v.A_drone_1 - 47/(47+27)) < tol, 'availability of one drone');
 % full-DAS reference cost (hand): 4*636000 = 2,544,000 ; 145.4735*60700 = 8,830,241.45 ; total 11,374,241.45
 fullCost = 4*636000 + 145.4735*60700;
 assert(abs(fullCost - 11374241.45) < 0.01, 'hand-computed reference cost %.2f', fullCost);
 
+chk('Pd_DAS', 0.969); chk('Pc_DAS', 0.983); chk('Pc_drone', 0.89); chk('T_charge_min', 27); chk('P_shelter', 170); chk('P0', 29100);
+for s = {'Pd_DAS','Pc_DAS','Pc_drone','T_charge_min','P_shelter','P0'}, assert(strcmp(t.(s{1}), 'SOURCE-STATED'), '%s must be SOURCE-STATED', s{1}); end
+assert(isequal(P.range.Pc_DAS, [0.983 0.993]) && P.range.Pd_DAS(2) == 1.0, 'sensitivity ranges of Pc_DAS / Pd_DAS');
+assert(abs(P.range.C_fiber_per_km(1) - 30350) < 1e-9 && abs(P.range.C_fiber_per_km(2) - 121400) < 1e-9, 'C_fiber sensitivity x0.5 / x2');
+
 % (3) every value has a tag from the allowed list, and a source text
-allowed = {'TABLE','TABLE-DERIVED','ASSUMED','PLACEHOLDER','DERIVED-PROPOSED'};
+allowed = {'TABLE','TABLE-DERIVED','ASSUMED','PLACEHOLDER','DERIVED-PROPOSED','SOURCE-STATED'};
 f = fieldnames(v);
 for k = 1:numel(f)
     assert(isfield(t, f{k}) && ismember(t.(f{k}), allowed), 'missing / bad tag for %s', f{k});
     assert(isfield(P.src, f{k}) && ~isempty(P.src.(f{k})), 'missing source for %s', f{k});
 end
 % (4) placeholders are tagged as such and the table TBD cells are really TBD
-for s = {'Pd_DAS','Pc_DAS','Pc_drone','P_shelter','T_charge_min','C_shelter','C_fiber_per_km'}
+for s = {'C_shelter','C_fiber_per_km'}
     assert(strcmp(t.(s{1}), 'PLACEHOLDER'), '%s must be PLACEHOLDER', s{1});
     assert(isfield(P.range, s{1}), 'no sensitivity range for %s', s{1});
 end

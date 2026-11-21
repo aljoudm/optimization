@@ -85,7 +85,7 @@ for c = 1:nC
     [~, j] = min(hypot(px - pos(1), py - pos(2)));
     T.lat(c) = ring.lat0 + py(j) / ring.ky;   T.lon(c) = ring.lon0 + px(j) / ring.kx;
     sites(end+1) = make_site('checkpoint', cp(c).key, cp(c).name_en, sub(j), ring, Aa.cams_per_checkpoint, T.in_coverage(c)); %#ok<AGROW>
-    cpPos(end+1, :) = [px(j) py(j)]; %#ok<AGROW>
+    if T.in_coverage(c), cpPos(end+1, :) = [px(j) py(j)]; end %#ok<AGROW>   % only checkpoints in the coverage keep interdiction points clear
 end
 
 %% ---- interdiction points (ASSUMED) --------------------------------------------------------------------------------
@@ -93,11 +93,16 @@ nI = Aa.n_interdiction;
 lesser = ismember([rd.hw]', ["secondary" "tertiary"]);                 % column, so lesser(X(:,3)) stays a column
 pool = X(lesser(X(:,3)), 1:2);   pool2 = X(~lesser(X(:,3)) & ismember([rd(X(:,3)).hw]', Aa.interdiction_road_classes), 1:2);
 pool = [pool; pool2];                                                   % lesser roads first, then the major classes
-drop = false(size(pool, 1), 1);
+nRawCross = size(pool, 1);
+drop = false(size(pool, 1), 1);   dropBy = zeros(1, size(cpPos, 1));
 for a = 1:size(pool, 1)                                                 % keep clear of the checkpoints
-    if ~isempty(cpPos) && min(hypot(cpPos(:,1) - pool(a,1), cpPos(:,2) - pool(a,2))) < mergeM, drop(a) = true; end
+    if ~isempty(cpPos)
+        [dm, jm] = min(hypot(cpPos(:,1) - pool(a,1), cpPos(:,2) - pool(a,2)));
+        if dm < mergeM, drop(a) = true; dropBy(jm) = dropBy(jm) + 1; end
+    end
 end
 pool(drop, :) = [];
+nAfterDrop = size(pool, 1);
 keep = true(size(pool, 1), 1);
 for a = 1:size(pool, 1), if keep(a), keep(hypot(pool(:,1)-pool(a,1), pool(:,2)-pool(a,2)) < Aa.interdiction_merge_m & (1:size(pool,1))' > a) = false; end, end
 pool = pool(keep, :);
@@ -136,6 +141,7 @@ nCamsCell = accumarray([sites([sites.in]).cell]', [sites([sites.in]).nCams]', [c
 
 assets = struct('sites', sites, 'checkpointTable', T, 'coverMask', mask, 'coveredLen_m', coveredLen, ...
     'coverFrac', coveredLen ./ cells.L_m, 'nCamsCell', nCamsCell, 'nInterdictionPool', nPool, ...
+    'poolInfo', struct('rawCrossings', nRawCross, 'droppedNearCheckpoint', dropBy, 'afterDrop', nAfterDrop, 'afterMerge', nPool, 'checkpointOrder', {{sites([sites.in] & string({sites.kind}) == "checkpoint").key}}), ...
     'source', 'ASSUMED / source-based counts (alwatan_checkpoints, okaz_shumaisi, ajel_32points); positions by road-crossing rule, real locations are not public');
 
 if verbose

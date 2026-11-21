@@ -154,6 +154,22 @@ for k = 1:numel(fn)
     put(fn{k}, PH.(fn{k}).value, 'PLACEHOLDER', PH.(fn{k}).why);
     rng.(fn{k}) = PH.(fn{k}).range;
 end
+%% ---- 4b. SOURCE-STATED values (project lead, with the reference key she gave) ------------------------------------
+% These replace the placeholders above. They come from the NEW version of the parameter table. NOTE: the copy of the table in
+% this folder was still the OLD version when this block was written, so the numbers below were typed from the project lead's
+% message, not read from the file. When the new TSV arrives, check these lines against it.
+% Bib keys: zeng2024, liu2016, wang2024, khan_uav_thermal, dji_dock3_specs, gsma_coolsure.
+    function ss(name, value, range, why)               % register a source-stated value and its sensitivity range
+        put(name, value, 'SOURCE-STATED', why);   rng.(name) = range;
+    end
+ss('Pd_DAS',  0.969, [0.969 1.0],   'Pd_DAS = 0.969 [zeng2024]; sensitivity up to 1.0 [liu2016]');
+ss('Pc_DAS',   0.983, [0.983 0.993], 'Pc_DAS = 98.3% (several disturbance points) to 99.3% (one disturbance point) [wang2024]; both ends are run');
+ss('Pc_drone', 0.89,  [0.80 0.95],   'Pc_drone = 0.89 [khan_uav_thermal], a PROXY (UAV thermal human detection), not a measured classifier; earlier placeholder was 0.85 (= Pc_CCTV)');
+ss('T_charge_min', 27, [27 60],      'drone recharge time 27 min [dji_dock3_specs]; earlier placeholder 60');
+ss('P_shelter', 170,  [85 340],      'P_shelter = 170 W [gsma_coolsure]; sensitivity x0.5 and x2');
+rng.C_fiber_per_km = 60700 * [0.5 2];                  % C_fiber stays a PLACEHOLDER (table value, extremely doubtful): sensitivity x0.5 and x2
+put('lambda_cold_range', [1 2], 'SOURCE-STATED', 'lambda_cold = 1-2 events/day per zone (replaces 0); not used by the optimization, kept for the simulation');
+put('FAR_loss', 0.02, 'SOURCE-STATED', 'FAR = 2% as a ratio (1 - precision); not used by the optimization');
 % Point-Sensor Networks: every value is TBD in the table -> excluded from the base case (no data, no locations).
 put('use_PS', false, 'ASSUMED', 'Point-Sensor Networks excluded from the base case: all their values are TBD; hooks kept in the code');
 for s = {'Cov_PS','P_PS','Pd_PS','Pc_PS','C_PS'}
@@ -166,6 +182,8 @@ put('N_DAS_int_full', ceil(v.L_boundary_m / (v.N_ch_active * v.R_DAS_m)), 'TABLE
 % P0: the table proposes "CCTV-only system covering the same length" (row P0 note). It is a proposal, not a source.
 put('P0', ceil(v.L_boundary_m / v.Cov_CCTV_m) * v.P_CCTV, 'DERIVED-PROPOSED', ...
     'P0 = ceil(L_boundary / Cov_CCTV) * P_CCTV, the method proposed in the P0 row note (table value itself is TBD)');
+assert(v.P0 == 29100, 'load_params:P0', 'P0 formula must give the 29,100 W stated by the project lead (1455 x 20 W).');
+put('P0', 29100, 'SOURCE-STATED', 'P0 = 29,100 W = CCTV-only system covering the boundary = 1455 x 20 W (project lead; equals the formula in the P0 row note)');
 rng.P0 = [0.1 1] * v.P0;
 put('A_drone_1', v.T_drone_min / (v.T_drone_min + v.T_charge_min), 'DERIVED-PROPOSED', ...
     'availability of ONE drone = T_drone / (T_drone + T_charge); T_charge is a PLACEHOLDER');
@@ -175,7 +193,9 @@ opts = struct();
 opts.classification_fusion = 'weighted_vote';  % 'weighted_vote' | 'max' | 'independent_or' (optimistic upper bound)
 opts.hot_layers_rule       = 'pointwise';      % each point of a Hot cell must be covered by >= 2 layers
 opts.hot_min_layers        = 2;
-opts.relax_cold            = false;            % true: scenario with a relaxed target in Cold cells (decision pending)
+opts.ac0_definition        = 'classifier';     % 'classifier': AC0 is a requirement on the DAS classifier (Pc_DAS >= AC0, needs DAS in the cell);
+                                               % 'system': whole-system accuracy conditional on detection (reported as an extra result)
+opts.relax_cold            = false;           % true: scenario with a relaxed target in Cold cells (decision pending)
 opts.drone_time_share      = false;            % true: split a drone's watch time over the cells it serves (sensitivity)
 
 P = struct('v', v, 'tag', tag, 'src', src, 'range', rng, 'raw', raw, 'opts', opts, 'assets', A, 'tsvFile', string(tsvFile));

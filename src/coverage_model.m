@@ -61,13 +61,22 @@ for i = 1:n
 end
 Pc(isnan(Pc)) = 0;   Pc_or(isnan(Pc_or)) = 0;   Pc_max(isnan(Pc_max)) = 0;
 need = ones(n, 1);   need(cells.zoneCode == 3) = o.hot_min_layers;
-ok = (Pd >= v.AD0 - 1e-12) & (Pc >= v.AC0 - 1e-12) & (layers >= reshape(need, n, 1, 1));
+switch o.ac0_definition
+    case 'system',      okClass = Pc >= v.AC0 - 1e-12;                               % whole-system accuracy, conditional on detection
+    case 'classifier',  okClass = false(size(Pc));   okClass(:, 2, :) = v.Pc_DAS >= v.AC0 - 1e-12;   % requirement on the DAS classifier: needs DAS in the cell
+    otherwise, error('coverage_model:ac0', 'Unknown ac0_definition %s', o.ac0_definition);
+end
+okSys = Pc >= v.AC0 - 1e-12;                                                        % the other definition, reported as an extra result
+ok = (Pd >= v.AD0 - 1e-12) & okClass & (layers >= reshape(need, n, 1, 1));
 okDet = (Pd >= v.AD0 - 1e-12) & (layers >= reshape(need, n, 1, 1));          % detection + layers only (classification reported as a gap)
 
 M = struct('Pd', Pd, 'PdWorst', PdW, 'Pc', Pc, 'Pc_or', Pc_or, 'Pc_max', Pc_max, 'layers', layers, 'need', need, 'ok', ok, 'okDet', okDet, ...
     'A', Ak, 'K', K, 'A1', A1, 'fusion', o.classification_fusion);
 M.bestPc = max(reshape(Pc, n, []), [], 2);
-M.gapAC0 = max(0, v.AC0 - M.bestPc);
+M.gapSystemAC0 = max(0, v.AC0 - M.bestPc);                         % whole-system definition: gap to AC0 per cell
+M.gapClassifier = max(0, v.AC0 - v.Pc_DAS);                         % classifier definition: one number (the requirement is on Pc_DAS)
+M.gapAC0 = tern(strcmp(o.ac0_definition, 'system'), M.gapSystemAC0, M.gapClassifier * ones(n, 1));
+M.okSystemAC0 = okSys;   M.ac0_definition = o.ac0_definition;
 M.cellOk = any(reshape(ok, n, []), 2);                 % can ANY state satisfy every constraint of the cell?
 M.cellOkDet = any(reshape(okDet, n, []), 2);
 
