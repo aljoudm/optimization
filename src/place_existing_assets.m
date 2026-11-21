@@ -49,12 +49,13 @@ end
 
 %% ---- checkpoints --------------------------------------------------------------------------------------------------
 cp = Aa.checkpoints;   nC = numel(cp);
-T = table('Size', [nC 11], 'VariableTypes', {'string','string','string','string','double','string','double','double','logical','double','logical'}, ...
-    'VariableNames', {'checkpoint','matched_road','osm_ref','highway','ways_matched','confidence','crossing_clusters','dist_to_boundary_m','flagged_include','offset_m','in_coverage'});
+T = table('Size', [nC 14], 'VariableTypes', {'string','string','string','string','double','string','double','double','double','double','double','logical','double','logical'}, ...
+    'VariableNames', {'checkpoint','matched_road','osm_ref','highway','osm_way_id','confidence','ways_matched','crossing_clusters','lat','lon','dist_to_boundary_m','flagged_include','offset_m','in_coverage'});
 sites = struct('kind', {}, 'key', {}, 'name', {}, 'piece', {}, 's', {}, 'x', {}, 'y', {}, 'cell', {}, 'nCams', {}, 'in', {});
 cpPos = zeros(0, 2);
 for c = 1:nC
-    hit = find(arrayfun(@(r) ~isempty(regexp(r.name + " " + r.en, cp(c).road_pattern, 'once')) && ismember(r.hw, cp(c).highway), rd));
+    hit = find(arrayfun(@(r) ~isempty(regexp(r.name + " " + r.en, cp(c).road_pattern, 'once')) && ismember(r.hw, cp(c).highway) ...
+        && (cp(c).road_ref == "" || r.ref == cp(c).road_ref), rd));
     T.checkpoint(c) = cp(c).name_en;   T.confidence(c) = cp(c).match_confidence;   T.ways_matched(c) = numel(hit);
     T.flagged_include(c) = cp(c).include;   T.offset_m(c) = cp(c).offset_m;
     if isempty(hit)
@@ -78,10 +79,11 @@ for c = 1:nC
         T.crossing_clusters(c) = 0;   gap = best;                                                              % the road never crosses
     end
     off = cp(c).offset_m;   if isnan(off), off = 0; end
-    T.matched_road(c) = rd(way).name + " | " + rd(way).en;   T.osm_ref(c) = rd(way).ref;   T.highway(c) = rd(way).hw;
+    T.matched_road(c) = rd(way).name + " | " + rd(way).en;   T.osm_ref(c) = rd(way).ref;   T.highway(c) = rd(way).hw;   T.osm_way_id(c) = rd(way).id;
     T.dist_to_boundary_m(c) = gap + off;
     T.in_coverage(c) = cp(c).include && T.dist_to_boundary_m(c) <= Aa.site_near_boundary_m;
     [~, j] = min(hypot(px - pos(1), py - pos(2)));
+    T.lat(c) = ring.lat0 + py(j) / ring.ky;   T.lon(c) = ring.lon0 + px(j) / ring.kx;
     sites(end+1) = make_site('checkpoint', cp(c).key, cp(c).name_en, sub(j), ring, Aa.cams_per_checkpoint, T.in_coverage(c)); %#ok<AGROW>
     cpPos(end+1, :) = [px(j) py(j)]; %#ok<AGROW>
 end
@@ -113,7 +115,7 @@ for a = 1:size(chosen, 1)
     sites(end+1) = make_site('interdiction', sprintf('ip%02d', a), sprintf('interdiction point %d', a), sub(j), ring, Aa.cams_per_interdiction, true); %#ok<AGROW>
 end
 nFill = nI - size(chosen, 1);
-if nFill > 0                                                            % too few crossings: filler sites near roads
+if nFill > 0 && Aa.allow_filler                                                           % too few crossings: filler sites near roads
     rx = vertcat(rd.x);   ry = vertcat(rd.y);   dRoad = inf(numel(px), 1);
     for a = 1:numel(px), dRoad(a) = min(hypot(rx - px(a), ry - py(a))); end
     cand = find(dRoad < v.road_snap_km * 1e3);   ref = [cpPos; chosen];
@@ -139,6 +141,9 @@ assets = struct('sites', sites, 'checkpointTable', T, 'coverMask', mask, 'covere
 if verbose
     fprintf('\nCheckpoint matching (OSM road -> crossing with the boundary); "near boundary" limit = %g m\n', Aa.site_near_boundary_m);
     disp(T);
+    inS = sites([sites.in] & string({sites.kind}) == "checkpoint");   dm = inf;
+    for a = 1:numel(inS), for b = a+1:numel(inS), dm = min(dm, hypot(inS(a).x - inS(b).x, inS(b).y - inS(a).y)); end, end
+    fprintf('Smallest distance between two checkpoints in the coverage: %.1f km (must not be one shared crossing)\n', dm / 1e3);
     kinds = string({sites.kind});
     fprintf('Sites in coverage: %d checkpoints, %d interdiction (+%d filler); cameras counted: %d; crossings available for interdiction points: %d (wanted %d)\n', ...
         nnz([sites.in] & kinds == "checkpoint"), nnz([sites.in] & kinds == "interdiction"), nnz([sites.in] & kinds == "filler"), sum([sites([sites.in]).nCams]), nPool, nI);
@@ -154,13 +159,13 @@ end
 function rd = read_roads(inDir, ring)
 % OSM ways with their tags (roads_osm.json from DAS-map) in the local metric frame of the ring.
 d = jsondecode(fileread(fullfile(inDir, 'roads_osm.json'), 'Encoding', 'UTF-8'));
-els = d.elements;   rd = struct('hw', {}, 'ref', {}, 'name', {}, 'en', {}, 'x', {}, 'y', {});
+els = d.elements;   rd = struct('id', {}, 'hw', {}, 'ref', {}, 'name', {}, 'en', {}, 'x', {}, 'y', {});
 tag = @(t, f) string(fielddef(t, f));
 for k = 1:numel(els)
     if iscell(els), e = els{k}; else, e = els(k); end
     if ~isfield(e, 'geometry'), continue; end
     t = e.tags;
-    rd(end+1) = struct('hw', string(t.highway), 'ref', tag(t, 'ref'), 'name', tag(t, 'name'), 'en', tag(t, 'name_en'), ...
+    rd(end+1) = struct('id', e.id, 'hw', string(t.highway), 'ref', tag(t, 'ref'), 'name', tag(t, 'name'), 'en', tag(t, 'name_en'), ...
         'x', ([e.geometry.lon]' - ring.lon0) * ring.kx, 'y', ([e.geometry.lat]' - ring.lat0) * ring.ky); %#ok<AGROW>
 end
 end

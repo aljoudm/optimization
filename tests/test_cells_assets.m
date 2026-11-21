@@ -35,6 +35,16 @@ assert(height(T) == 6 && all(T.ways_matched > 0), 'every checkpoint must match a
 assert(~T.in_coverage(strcmp(T.checkpoint, 'Al-Laith')), 'Al-Laith must be outside the coverage (project lead)');
 assert(nnz(kinds == "checkpoint") == 6, '6 checkpoint sites');
 assert(nnz(kinds ~= "checkpoint") == Aa.n_interdiction, 'interdiction + filler sites = %d', Aa.n_interdiction);
+% Al-Sharaye (ref 40, east) and Al-Hada (ref 15) must be different crossings, far apart; Sharaye must lie on ref 40
+iS = strcmp(T.checkpoint, 'Al-Sharaye (Taif road via Al-Sail)');   iH = strcmp(T.checkpoint, 'Al-Hada (Taif road via Al-Hada)');
+assert(T.osm_ref(iS) == "40" && T.osm_ref(iH) == "15", 'Sharaye must be on ref 40 and Hada on ref 15');
+dSH = hypot((T.lon(iS) - T.lon(iH)) * cells.ring.kx, (T.lat(iS) - T.lat(iH)) * cells.ring.ky);
+assert(dSH > 5000, 'Sharaye and Hada must not share a crossing (%.0f m apart)', dSH);
+% interdiction: real crossings only (no filler) vs completed with filler
+Pn = P;  Pn.assets.allow_filler = false;   An = place_existing_assets(Pn, cells);
+assert(nnz(string({An.sites.kind}) == "interdiction") == A.nInterdictionPool && ~any(string({An.sites.kind}) == "filler"), 'no-filler case');
+fprintf('interdiction cases: %d real crossings only -> covered %.0f m (%d cells); %d (with %d filler) -> covered %.0f m (%d cells)\n', ...
+    A.nInterdictionPool, sum(An.coveredLen_m), nnz(An.coveredLen_m > 0), Aa.n_interdiction, nnz(kinds == "filler"), sum(A.coveredLen_m), nnz(A.coveredLen_m > 0));
 assert(all([A.sites.cell] >= 1 & [A.sites.cell] <= cells.n), 'site cells');
 nIn = nnz([A.sites.in]);
 % coverage cannot exceed one footprint per "in" site, and must not be zero
