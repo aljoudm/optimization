@@ -1,4 +1,4 @@
-function M = coverage_model(P, cells, assets)
+function M = coverage_model(P, cells, assets, reachCache)
 % COVERAGE_MODEL  Detection / classification / layers of every cell for every possible allocation state, plus drone reach.
 %
 %   M = coverage_model(P, cells, assets)
@@ -81,6 +81,9 @@ M.cellOk = any(reshape(ok, n, []), 2);                 % can ANY state satisfy e
 M.cellOkDet = any(reshape(okDet, n, []), 2);
 
 % drone reach: candidate stations = boundary points every 500 m + interior grid every 2 km (ASSUMED: real dock sites are not public)
+if nargin >= 4 && ~isempty(reachCache)                       % reach does not depend on the sensor values: reuse it
+    M.reach = reachCache.reach;   M.stationXY = reachCache.stationXY;   return;
+end
 sub = 1:100:numel(ring.x);   st = [ring.x(sub) ring.y(sub)];
 [gx, gy] = meshgrid(floor(min(ring.x)/2000)*2000 : 2000 : max(ring.x), floor(min(ring.y)/2000)*2000 : 2000 : max(ring.y));
 inn = inpolygon(gx(:), gy(:), [ring.x; ring.x(1)], [ring.y; ring.y(1)]);   st = [st; gx(inn) gy(inn)];
