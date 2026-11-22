@@ -19,7 +19,7 @@
 \label{sec:optimization}
 
 \subsection{Roles of the sensing layers}
-The Makkah boundary will be monitored by three kinds of assets. The \emph{DAS} (distributed acoustic sensing, $\Phi$-OTDR) fibre will be the only new
+The Makkah boundary will be monitored by three kinds of assets. The \emph{DAS} (distributed acoustic sensing, $\Phi$-OTDR) fiber will be the only new
 infrastructure; the CCTV cameras, the drones and the Point-Sensor Networks already exist in Makkah and will be used as they are, at zero capital cost.
 Point-Sensor Networks are installed at the checkpoints together with the cameras, but no sensing values are available for them, so they will be excluded from
 this version of the model; a switch in the code will allow them to be added later.
@@ -39,13 +39,15 @@ with a sufficiently high probability that a drone is ready, or a camera that cov
 
 \subsection{Sets and data}
 The boundary will be divided into $|\mathcal{I}|=139$ cells of about $1$~km, $\mathcal{I}=\mathcal{I}_{\mathrm{Hot}}\cup\mathcal{I}_{\mathrm{Neutral}}\cup\mathcal{I}_{\mathrm{Cold}}$
-with $36$, $56$ and $47$ cells. Because the fibre is continuous along the boundary, the boundary will also be cut into \emph{runs}
+with $36$, $56$ and $47$ cells. Because the fiber is continuous along the boundary, the boundary will also be cut into \emph{runs}
 $\mathcal{R}$ ($|\mathcal{R}|=154$): a run is a maximal stretch of the boundary that stays inside one cell; run $r$ has length $L_r$ and $\mathcal{R}_i\subset\mathcal{R}$
 is the set of runs of cell $i$. A site for an interrogator will be a run $k\in\mathcal{R}$ (the interrogator is placed on the boundary, lead-in $L_{\mathrm{lead}}=0$).
 Let $\mathcal{R}_k^{+}$ and $\mathcal{R}_k^{-}$ be the runs that the right and the left channel of site $k$ can reach, i.e. whose far end is at most
 $R_{\mathrm{DAS}}-L_{\mathrm{lead}}$ away along the boundary. A unit will have two active channels, one per direction, so one unit will cover at most $2R_{\mathrm{DAS}}$.
 Drone stations will be chosen from a set $\mathcal{S}$ of candidate stations (boundary points every $500$~m and an interior grid every $2$~km); $\mathcal{S}_i\subset\mathcal{S}$ will be the
 stations that serve cell $i$, i.e. whose distance to the farthest point of the cell is at most $R_{\mathrm{resp}}$.
+The $457$ candidate stations will be reduced to $95$ before the optimization: a candidate whose set of served cells is contained in that of another candidate will never be needed, because a station can serve any number of cells,
+so removing it will not change the optimum.
 
 The existing cameras will be placed at the road crossings of the six entrance checkpoints and of the 32 interdiction points (positions are assumed, real locations are not public).
 All cameras of one site watch the same lanes, so a site will cover one stretch of $\mathrm{Cov}_{\mathrm{CCTV}}=100$~m of the boundary; $f_i\in[0,1)$ will be the fraction of the boundary of
@@ -53,7 +55,7 @@ cell $i$ covered by cameras (about $2.6\%$ of the whole boundary).
 
 \subsection{Detection, availability and verification}
 Let $p_D$ and $p_C$ be the detection probabilities of the DAS and of a camera. Intruders will be assumed to cross the cell at a uniformly distributed position, and the sensors
-will be assumed to fail independently. With $x_i\in\{0,1\}$ indicating DAS fibre in cell $i$, the detection accuracy of the cell will be the length-weighted average
+will be assumed to fail independently. With $x_i\in\{0,1\}$ indicating DAS fiber in cell $i$, the detection accuracy of the cell will be the length-weighted average
 of $1-\prod(1-p)$ over its covered and uncovered parts, which is linear in $x_i$:
 \begin{equation}
   P_{d,i}(x_i)=(1-f_i)\,x_i p_D+f_i\bigl[1-(1-x_ip_D)(1-p_C)\bigr]=f_ip_C+x_ip_D\,(1-f_ip_C).
@@ -85,10 +87,10 @@ detects, so $1-\prod(1-p)$ is valid for detection; a classification is a decisio
 and a verifying drone that is ready, will vote with weights $w_j=\ln\bigl(p_{c,j}/(1-p_{c,j})\bigr)$ and ties will count one half.
 
 \subsection{Final formulation}
-Let $y_k\in\{0,1\}$ indicate an interrogator at site $k$, $z_r\in\{0,1\}$ fibre on run $r$, and $a^{\pm}_{k,r}\in\{0,1\}$ that run $r\in\mathcal{R}_k^{\pm}$ is served by the right/left channel of site $k$.
+Let $y_k\in\{0,1\}$ indicate an interrogator at site $k$, $z_r\in\{0,1\}$ fiber on run $r$, and $a^{\pm}_{k,r}\in\{0,1\}$ that run $r\in\mathcal{R}_k^{\pm}$ is served by the right/left channel of site $k$.
 Let $g_i\ge0$ and $h_i\ge0$ be the (elastic) shortfalls of the detection and of the layer requirement of cell $i$. The additional cost, with existing assets at zero cost, will be
 \begin{equation}
-  \Ctotal=\bigl(C_{\mathrm{DAS,int}}+C_{\mathrm{shelter}}\bigr)\sum_{k\in\mathcal{R}}y_k+C_{\mathrm{fibre}}\sum_{r\in\mathcal{R}}L_r\,z_r ,
+  \Ctotal=\bigl(C_{\mathrm{DAS,int}}+C_{\mathrm{shelter}}\bigr)\sum_{k\in\mathcal{R}}y_k+C_{\mathrm{fiber}}\sum_{r\in\mathcal{R}}L_r\,z_r ,
   \label{eq:ctotal}
 \end{equation}
 and the objectives will be minimised in lexicographic order:
@@ -104,7 +106,7 @@ and $A_{\mathrm{Hot}}=\sum_{i\in\mathcal{I}_{\mathrm{Hot}}}A_{\mathrm{ver},i}$ t
   & P_{d,i}(x_i)+g_i\ \ge\ \ADzero, && \forall i\in\mathcal{I}, \label{eq:c-det}\\
   & x_i+\rho_i+h_i\ \ge\ \ell_i, && \forall i\in\mathcal{I}, \label{eq:c-layers}\\
   & \textstyle\sum_{m'\ge m}q_{i,m'}\ \le\ \sum_{s\in\mathcal{S}_i}\sum_{m'\ge m}u_{s,m'}, && \forall i,\ \forall m, \label{eq:c-link}\\
-  & x_i\ \le\ z_r, && \forall i,\ \forall r\in\mathcal{R}_i, \label{eq:c-fibre}\\
+  & x_i\ \le\ z_r, && \forall i,\ \forall r\in\mathcal{R}_i, \label{eq:c-fiber}\\
   & a^{\pm}_{k,r_1}\le y_k,\qquad a^{\pm}_{k,r_t}\le a^{\pm}_{k,r_{t-1}},\qquad a^{\pm}_{k,r}\le z_r, && \forall k,\ r_t\in\mathcal{R}_k^{\pm}, \label{eq:c-contig}\\
   & z_r\ \le\ y_r+\textstyle\sum_{k}\bigl(a^{+}_{k,r}+a^{-}_{k,r}\bigr), && \forall r\in\mathcal{R}, \label{eq:c-service}\\
   & \textstyle\sum_{s\in\mathcal{S}}\sum_{m}m\,u_{s,m}\ \le\ N_{\mathrm{drone}},\qquad \textstyle\sum_mu_{s,m}\le1, && \forall s\in\mathcal{S}, \label{eq:c-drones}\\
@@ -112,8 +114,8 @@ and $A_{\mathrm{Hot}}=\sum_{i\in\mathcal{I}_{\mathrm{Hot}}}A_{\mathrm{ver},i}$ t
 \end{align}
 \end{subequations}
 Constraint~\eqref{eq:c-det} is the detection requirement of the DAS and the cameras; \eqref{eq:c-layers} requires two layers in Hot cells (DAS and verification) and one elsewhere;
-\eqref{eq:c-link} lets a cell use only drone stations that exist, are within reach and hold enough drones; \eqref{eq:c-fibre}--\eqref{eq:c-service} make the fibre continuous
-and installable (every fibre run will be served by an interrogator within $R_{\mathrm{DAS}}$ through fibre without gaps); \eqref{eq:c-drones} limits the drones to those that exist; and \eqref{eq:c-power}
+\eqref{eq:c-link} lets a cell use only drone stations that exist, are within reach and hold enough drones; \eqref{eq:c-fiber}--\eqref{eq:c-service} make the fiber continuous
+and installable (every fiber run will be served by an interrogator within $R_{\mathrm{DAS}}$ through fiber without gaps); \eqref{eq:c-drones} limits the drones to those that exist; and \eqref{eq:c-power}
 limits the power of the new equipment, the interrogators and their air-conditioned cabins, to less than $\Pzero$.
 
 \paragraph{Elastic constraints and the order of the objectives.} With the detection accuracy of the DAS below $\ADzero$ (for example $p_D=0.969$) or with few drones, a complete solution may not exist.
@@ -142,7 +144,7 @@ The steps of the procedure, from which the flowchart in Fig.~\ref{fig:opt-flowch
   \item If a verification gap remains, solve once more without the drone limit to find the fewest drones that verify every Hot cell.
   \item Recompute the verification of every cell from the final station layout, and write the per-cell table, the totals ($\Ctotal$, power against $\Pzero$, number of interrogators, drone stations) and the map.
   \item Compare with two baselines: existing assets only (no DAS), and the same drones spread evenly without optimization.
-  \item Repeat for the sensitivity cases ($p_D$, $P_{c,\mathrm{DAS}}$, $T_{\mathrm{resp}}$, $A_{\mathrm{ver,min}}$, $C_{\mathrm{fibre}}$).
+  \item Repeat for the sensitivity cases ($p_D$, $P_{c,\mathrm{DAS}}$, $T_{\mathrm{resp}}$, $A_{\mathrm{ver,min}}$, $C_{\mathrm{fiber}}$).
 \end{enumerate}
 
 \begin{figure}[ht]
@@ -155,7 +157,7 @@ The steps of the procedure, from which the flowchart in Fig.~\ref{fig:opt-flowch
 \begin{figure}[ht]
   \centering
   \includegraphics[width=\linewidth]{s3_optimization_map.pdf}
-  \caption{Optimal allocation for the medium scenario (6 drones): DAS fibre on the boundary, interrogators, drone stations with their response circles, and the Hot cells with and without a verification layer.
+  \caption{Optimal allocation for the medium scenario (6 drones): DAS fiber on the boundary, interrogators, drone stations with their response circles, and the Hot cells with and without a verification layer.
   $\Ctotal$ does not include the cost of the cabins ($C_{\mathrm{shelter}}=0$, PLACEHOLDER).}
   \label{fig:s3-map}
 \end{figure}
@@ -166,7 +168,7 @@ The steps of the procedure, from which the flowchart in Fig.~\ref{fig:opt-flowch
   \item The intruder position will be assumed uniform along the cell; existing cameras will cover one $100$~m stretch per site.
   \item A drone station will be assumed to serve every cell in its reach; simultaneous alarms in different cells are not modelled.
   \item Drone stations will be chosen from a candidate set because the real dock sites are not public.
-  \item $C_{\mathrm{shelter}}=0$ is a PLACEHOLDER, so $\Ctotal$ will be lower than the real additional cost; $C_{\mathrm{fibre}}$ has no published Saudi source and will be varied by $\times0.5$ and $\times2$.
+  \item $C_{\mathrm{shelter}}=0$ is a PLACEHOLDER, so $\Ctotal$ will be lower than the real additional cost; $C_{\mathrm{fiber}}$ has no published Saudi source and will be varied by $\times0.5$ and $\times2$.
   \item $T_{\mathrm{resp}}$ and $A_{\mathrm{ver,min}}$ are PLACEHOLDERs; $T_{\mathrm{launch}}$ comes from a reseller page and must be verified on the manufacturer page.
 \end{itemize}
 
@@ -184,7 +186,7 @@ $\ADzero$ & minimum detection accuracy of every cell & $0.98$ & project target \
 $\ACzero$ & minimum classification accuracy (check on the DAS classifier) & $0.98$ & project target \\
 $\Pzero$ & upper limit of the power of the new equipment & $29{,}100$~W & CCTV-only system, $1455\times20$~W \\
 $\Ctotal$ & additional cost (objective), without cabins & result & --- \\
-$\mathcal{I}$, $\mathcal{R}$, $\mathcal{S}$ & cells, boundary runs, candidate drone stations & $139$, $154$, $457$ & DAS-map; ASSUMED \\
+$\mathcal{I}$, $\mathcal{R}$, $\mathcal{S}$ & cells, boundary runs, candidate drone stations & $139$, $154$, $457$ (reduced to $95$, see text) & DAS-map; ASSUMED \\
 Hot / Neutral / Cold & zones of the cells & $36$ / $56$ / $47$ cells & DAS-map zoning \\
 $L_r$ & length of run $r$ & about $1$~km (cell size) & DAS-map \\
 $f_i$ & fraction of cell $i$ covered by existing cameras & computed ($2.6\%$ overall) & ASSUMED positions \\
@@ -195,12 +197,12 @@ $p_D$ & detection probability of the DAS & $0.969$ (sens.\ $0.98$, $1.0$) & \src
 $p_C$ & detection probability of a camera & $0.909$ & table row (Park et al.) \\
 $P_{c,\mathrm{DAS}}$ & classification accuracy of the DAS classifier & $0.983$--$0.993$ & \src{wang2024} \\
 $p_{c,C}$, $p_{c,\mathrm{drone}}$ & classification accuracy of a camera, of a drone & $0.85$, $0.89$ (proxy) & table row; \src{khan\_uav\_thermal} \\
-$R_{\mathrm{DAS}}$ & sensing range of one channel & $20$~km & FEBUS A1-NEO datasheet \\
-$L_{\mathrm{lead}}$ & lead-in fibre from the cabin to the boundary & $0$~m & ASSUMED \\
+$R_{\mathrm{DAS}}$ & sensing range of one channel & $20$~km & \src{febus2026a1neo} \\
+$L_{\mathrm{lead}}$ & lead-in fiber from the cabin to the boundary & $0$~m & ASSUMED \\
 $P_{\mathrm{DAS}}$, $P_{\mathrm{shelter}}$ & power of one interrogator, of its cabin cooling & $170$~W, $170$~W & datasheet; \src{gsma\_coolsure} \\
 $C_{\mathrm{DAS,int}}$ & cost of one interrogator & $636{,}000$~SAR & vendor meeting, FX assumed \\
 $C_{\mathrm{shelter}}$ & cost of one cabin & $0$ (not costed) & PLACEHOLDER \\
-$C_{\mathrm{fibre}}$ & cost of fibre with installation & $60{,}700$~SAR/km & PLACEHOLDER (sens.\ $\times0.5$, $\times2$) \\
+$C_{\mathrm{fiber}}$ & cost of fiber with installation & $60{,}700$~SAR/km & PLACEHOLDER (sens.\ $\times0.5$, $\times2$) \\
 $N_{\mathrm{drone}}$ & drones available (low / medium / high) & $3$ / $6$ / $12$ & ASSUMED; \src{yenisafak2026drones} \\
 $T_{d}$, $T_{c}$ & flight time, recharge time of a drone & $47$~min, $27$~min & table row; \src{dji\_dock3\_specs} \\
 $v_{d}$ & maximum horizontal speed (Dock mode) & $15$~m/s & \src{dji\_dock3\_specs} \\
@@ -209,7 +211,7 @@ $T_{\mathrm{resp}}$ & required response time & $300$~s (sens.\ $180$, $600$) & P
 $\mathrm{Cov}_{\mathrm{drone}}$ & operating radius of a drone & $11$~km & table row \\
 $R_{\mathrm{resp}}$ & response radius, eq.~\eqref{eq:rresp} & $4350$~m & derived \\
 $A_{\mathrm{ver,min}}$ & minimum probability that a drone is ready & $0.9$ (sens.\ $0.8$, $0.95$) & PLACEHOLDER \\
-$K$, $Q$ & most useful drones per station, most stations serving one cell & $2$, $2$ & derived; ASSUMED \\
+$K$, $Q$ & most useful drones per station, most stations serving one cell & $2$, $2$ ($Q=3$ gives the same result) & derived; ASSUMED \\
 $C_{\mathrm{drone}}$ & price of a drone with its dock (reference only) & $148{,}887$~SAR & table row \\
 \end{longtable}
 

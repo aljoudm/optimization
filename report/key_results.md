@@ -100,5 +100,6 @@ A_ver,min = 0.8 and 0.95 give the same Hot verification as 0.9 in the medium sce
 | A_ver,min | 0.8 / 0.9 / 0.95 | no change in the medium scenario |
 | C_fibre | ×0.5 / ×1 / ×2 | C_total 6.96 / 11.37 / 20.20 MSAR; allocation unchanged |
 | Camera sites | 22 / 32 | no change |
+| Q (stations serving one cell) | 2 / 3 | no change (Hot verified 9 / 22 / 34, 14 drones for all Hot, same C_total) |
 
 (Values of the "previous" model, in which drones detected, are not valid any more; see `design_decisions.md`, D1.)
