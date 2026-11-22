@@ -1,0 +1,4 @@
+scenario,N_drone,Hot_verified_optimal,Hot_verified_even_pairs,Hot_verified_even_singles,Hot_cells,optimal_pct,even_pairs_pct,cells_verified_optimal,cells_verified_even_pairs,cells
+low,3,9,0,0,36,25,0,15,9,139
+medium,6,22,7,0,36,61.1111111111111,19.4444444444444,41,34,139
+high,12,34,12,0,36,94.4444444444444,33.3333333333333,75,59,139

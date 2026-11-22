@@ -56,7 +56,7 @@ v = struct();  tag = struct();  src = struct();  rng = struct();
 cellfun(@need, {'AD0','R_DAS','N_ch_DAS','N_ch_active','P_DAS','C_DAS_int','C_fiber','L_boundary','L_leadin', ...
     'Cov_CCTV','P_CCTV','Pd_CCTV','Pc_CCTV','C_CCTV','Cov_drone','P_drone','T_drone','Pd_drone','C_drone', ...
     'N_drone_avail','cell_size','R_hot','R_cold','N_cells','L_zone','P0','P_shelter','Pd_DAS','Pc_DAS','Pc_drone', ...
-    'Pd_PS','Pc_PS','Cov_PS','P_PS','C_PS','AC0','T_charge','lambda_cold','FAR','C_shelter'});
+    'Pd_PS','Pc_PS','Cov_PS','P_PS','C_PS','AC0','T_charge','lambda_cold','FAR','C_shelter','v_drone','T_launch','T_resp','A_ver_min','R_resp'});
 
 put('AD0',          num('AD0')/100,        'TABLE', 'AD0, status approved');
 put('R_DAS_m',      num('R_DAS')*1e3,      'TABLE', 'R_DAS (20 km option, FEBUS A1-NEO datasheet)');
@@ -166,13 +166,14 @@ rng.T_charge_min = [27 60];                            % ASSUMED sensitivity ran
 %% ---- 4c. drones as a RESPONSE / VERIFICATION layer (decision of 22 Nov): response-time parameters --------------------------------
 % Drones do not detect. After a DAS alarm a drone from a station within reach verifies the event; detection (AD0) comes from DAS and
 % cameras only. A station reaches a cell if the farthest point of the cell is within R_resp = min(Cov_drone, v_drone*(T_resp - T_launch)).
-put('v_drone_ms', 15, 'SOURCE-STATED', 'Matrice 4D/4TD max horizontal speed 15 m/s: Normal mode, obstacle sensing on, the only mode allowed with DJI Dock 3 (DJI official specs page, key dji_dock3_specs; Sport mode 21 m/s is not available with the Dock)');
-put('T_launch_s', 10, 'SOURCE-STATED', 'dock takeoff time 10 s for DJI Dock 3: SOURCE = reseller page (Advexure, advexure.com/collections/drone-docking-stations/products/dji-dock-3-for-matrice-4d-and-4td), VERIFY on the DJI official page; not on the DJI specs page');
-put('T_resp_s', 300, 'PLACEHOLDER', 'response time within which a drone must reach the cell; PLACEHOLDER linked to T_alert (TBD, Student 1); sensitivity 180-600 s');
+put('v_drone_ms', num('v_drone'), 'TABLE', 'Matrice 4D/4TD max horizontal speed 15 m/s: Normal mode, the only mode allowed with DJI Dock 3 (DJI official specs, key dji_dock3_specs)');
+put('T_launch_s', num('T_launch'), 'TABLE', 'dock takeoff time 10 s for DJI Dock 3: SOURCE = reseller page (key advexure_dock3), VERIFY on the DJI official page (not on the DJI specs page)');
+put('T_resp_s', num('T_resp'), 'PLACEHOLDER', 'response time within which a drone must reach the cell; PLACEHOLDER linked to T_alert (TBD, Student 1); sensitivity 180-600 s');
 rng.T_resp_s = [180 600];
-put('A_ver_min', 0.9, 'PLACEHOLDER', 'minimum probability that a drone is ready for the verification layer of a Hot cell (one drone = 0.635, two drones at a station = 1.0); PLACEHOLDER, sensitivity 0.8 and 0.95');
+put('A_ver_min', num('A_ver_min'), 'PLACEHOLDER', 'minimum probability that a drone is ready for the verification layer of a Hot cell (one drone = 0.635, two drones at a station = 1.0); PLACEHOLDER, sensitivity 0.8 and 0.95');
 rng.A_ver_min = [0.8 0.95];
-put('R_resp_m', min(v.Cov_drone_m, v.v_drone_ms * (v.T_resp_s - v.T_launch_s)), 'DERIVED-PROPOSED', 'R_resp = min(Cov_drone, v_drone*(T_resp - T_launch))');
+put('R_resp_m', min(v.Cov_drone_m, v.v_drone_ms * (v.T_resp_s - v.T_launch_s)), 'TABLE-DERIVED', 'R_resp = min(Cov_drone, v_drone*(T_resp - T_launch)); equals the table row R_resp');
+assert(abs(v.R_resp_m - num('R_resp')) < 1e-9, 'load_params:Rresp', 'R_resp in the table (%g) differs from min(Cov_drone, v_drone*(T_resp - T_launch)) = %g', num('R_resp'), v.R_resp_m);
 put('P_shelter', num('P_shelter'), 'TABLE', 'P_shelter = 170 W [gsma_coolsure: cooling 30-50% of site load -> 73 to 170 W]; upper bound taken for Makkah heat');
 rng.P_shelter = [73 170];
 lc = str2double(regexp(char(row('lambda_cold').value), '\d+', 'match'));
