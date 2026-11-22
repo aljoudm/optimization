@@ -1,4 +1,4 @@
-scenario,N_drone,Hot_verified_optimal,Hot_verified_even_pairs,Hot_verified_even_singles,Hot_cells,optimal_pct,even_pairs_pct,cells_verified_optimal,cells_verified_even_pairs,cells
-low,3,9,0,0,36,25,0,15,9,139
-medium,6,22,7,0,36,61.1111111111111,19.4444444444444,41,34,139
-high,12,34,12,0,36,94.4444444444444,33.3333333333333,75,59,139
+scenario,N_drone,Hot_verified_optimal,Hot_verified_even_boundary,Hot_verified_even_candidates_2b,Hot_verified_even_best_phase_2c,Hot_verified_even_singles,Hot_cells,optimal_pct,even_boundary_pct,even_candidates_2b_pct,even_best_phase_2c_pct,cells_verified_optimal,cells_verified_even_boundary,cells_verified_2b,cells_verified_2c,cells
+low,3,9,0,0,9,0,36,25,0,0,25,15,9,0,13,139
+medium,6,22,7,2,16,0,36,61.1111111111111,19.4444444444444,5.55555555555556,44.4444444444444,41,34,12,33,139
+high,12,34,12,22,25,0,36,94.4444444444444,33.3333333333333,61.1111111111111,69.4444444444444,75,59,65,68,139

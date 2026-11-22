@@ -7,7 +7,7 @@ function make_stage5()
 here = fileparts(mfilename('fullpath'));   addpath(fullfile(here, '..', 'src'));
 outDir = fullfile(here, '..', 'results');   repDir = fullfile(here, '..', 'report');
 if ~exist(repDir, 'dir'), mkdir(repDir); end
-P = load_params();   P.assets.allow_filler = false;   v = P.v;   cells = load_cells(P);   A = place_existing_assets(P, cells);
+P = load_params();   P.assets.allow_filler = false;   v = P.v;   cells = load_cells(P);   A = place_existing_assets(P, cells);   M = coverage_model(P, cells, A);   % M.stationXY = the candidate drone stations of the optimization
 S = load(fullfile(outDir, 'allocs.mat'), 'allocs');   allocs = S.allocs;
 T = readtable(fullfile(outDir, 'summary_runs.csv'), 'TextType', 'string');   T.Properties.VariableNames{1} = 'kind';
 scen = P.assets.scenarios;   ring = cells.ring;   L = ring.L;   hot = cells.zoneCode == 3;   zn = {'Cold', 'Neutral', 'Hot'};
@@ -43,11 +43,27 @@ for s = 1:numel(scen)
     % variant: N single-drone stations evenly spread
     sA1 = ((1:N) - 0.5) * L / N;   xy1 = zeros(N, 2);   for j = 1:N, [~, k] = min(abs(ring.s - sA1(j)));   xy1(j, :) = [ring.x(k) ring.y(k)]; end
     lay1 = drone_layout(cells, P, xy1, ones(N, 1));
+    % baseline 2b (fair comparison): the same drones spread evenly over the SAME candidate stations the optimizer chose from (boundary every 500 m +
+    % interior grid every 2 km): k-means with k = number of stations on all candidates, each centre snapped to the nearest candidate.
+    rng(20261101);   [~, Cc] = kmeans(M.stationXY, Ns, 'Replicates', 20, 'Start', 'plus');   xy2b = zeros(Ns, 2);
+    for j = 1:Ns, [~, k] = min(hypot(M.stationXY(:, 1) - Cc(j, 1), M.stationXY(:, 2) - Cc(j, 2)));   xy2b(j, :) = M.stationXY(k, :); end
+    lay2b = drone_layout(cells, P, xy2b, nd2(:));
+    % baseline 2c: evenly spaced pairs on the boundary at the best of 40 phase offsets (the strongest even layout that does not optimise positions)
+    best = -1;
+    for ph = (0:39) / 40
+        sArcP = mod(((0:Ns-1) + ph) * L / Ns, L);   xyP = zeros(Ns, 2);
+        for j = 1:Ns, [~, k] = min(abs(ring.s - sArcP(j)));   xyP(j, :) = [ring.x(k) ring.y(k)]; end
+        lP = drone_layout(cells, P, xyP, nd2(:));   h = nnz(lP.verified & hot);
+        if h > best, best = h;   xy2c = xyP;   lay2c = lP; end
+    end
+    f = figure('Color', 'w', 'Position', [60 40 980 760], 'Visible', 'off');   ax = axes(f);
+    draw_allocation_map(ax, cells, P, al, lay2b, xy2b, nd2(:), sprintf('Baseline 2b (fair, no optimization), %s: same %d drones spread evenly over the candidate stations; Hot verified %d/%d', nm, N, nnz(lay2b.verified & hot), nnz(hot)), CABIN);
+    exportgraphics(f, fullfile(outDir, sprintf('map_baseline2b_%s.png', nm)), 'Resolution', 250);   exportgraphics(f, fullfile(outDir, sprintf('map_baseline2b_%s.pdf', nm)), 'ContentType', 'vector');   close(f);
     f = figure('Color', 'w', 'Position', [60 40 980 760], 'Visible', 'off');   ax = axes(f);
     draw_allocation_map(ax, cells, P, al, lay2, xy2, nd2(:), sprintf('Baseline 2 (no optimization), %s: same %d drones spread evenly; Hot verified %d/%d', nm, N, nnz(lay2.verified & hot), nnz(hot)), CABIN);
     exportgraphics(f, fullfile(outDir, sprintf('map_baseline2_%s.png', nm)), 'Resolution', 250);   exportgraphics(f, fullfile(outDir, sprintf('map_baseline2_%s.pdf', nm)), 'ContentType', 'vector');   close(f);
-    b2Rows(end+1, :) = {string(nm), N, hv, nnz(lay2.verified & hot), nnz(lay1.verified & hot), nnz(hot), 100 * hv / nnz(hot), 100 * nnz(lay2.verified & hot) / nnz(hot), ...
-        nnz(lay.verified), nnz(lay2.verified), cells.n}; %#ok<AGROW>
+    b2Rows(end+1, :) = {string(nm), N, hv, nnz(lay2.verified & hot), nnz(lay2b.verified & hot), nnz(lay2c.verified & hot), nnz(lay1.verified & hot), nnz(hot), 100 * hv / nnz(hot), 100 * nnz(lay2.verified & hot) / nnz(hot), 100 * nnz(lay2b.verified & hot) / nnz(hot), 100 * nnz(lay2c.verified & hot) / nnz(hot), ...
+        nnz(lay.verified), nnz(lay2.verified), nnz(lay2b.verified), nnz(lay2c.verified), cells.n}; %#ok<AGROW>
     % summary rows (Pd_DAS 0.969 and 0.98)
     for pd = [0.969 0.98]
         a = pick(nm, pd);   hvv = nnz(drone_layout(cells, P, a.drones.station_xy, a.drones.n(:)).verified & hot);
@@ -71,10 +87,10 @@ writetable(table((1:cells.n)', string(cells.zone), A.coverFrac, Pd0, v.AD0 - Pd0
 fprintf('\n== Baseline 1: existing assets only (cameras, no DAS, drones do not detect) ==\n');   disp(B1);
 
 %% ---- baseline 2 table ---------------------------------------------------------------------------------------------------------------------------
-B2 = cell2table(b2Rows, 'VariableNames', {'scenario','N_drone','Hot_verified_optimal','Hot_verified_even_pairs','Hot_verified_even_singles','Hot_cells','optimal_pct','even_pairs_pct','cells_verified_optimal','cells_verified_even_pairs','cells'});
+B2 = cell2table(b2Rows, 'VariableNames', {'scenario','N_drone','Hot_verified_optimal','Hot_verified_even_boundary','Hot_verified_even_candidates_2b','Hot_verified_even_best_phase_2c','Hot_verified_even_singles','Hot_cells','optimal_pct','even_boundary_pct','even_candidates_2b_pct','even_best_phase_2c_pct','cells_verified_optimal','cells_verified_even_boundary','cells_verified_2b','cells_verified_2c','cells'});
 writetable(B2, fullfile(outDir, 'baseline2_even_drones.csv'));
 fprintf('\n== Baseline 2: same drones spread evenly (no optimization) vs the optimal placement, Hot cells with the verification layer ==\n');   disp(B2);
-fprintf('(even_pairs: 2 drones per station spaced evenly by arc length, one single drone if N is odd; even_singles: one drone per station, ready prob 0.635 < A_ver_min)\n');
+fprintf('(even_boundary: pairs of drones on stations spaced evenly along the boundary (one single drone if N is odd); 2b: the same drones spread evenly over the SAME candidate stations the optimizer uses (k-means on boundary + interior grid, snapped to candidates); 2c: even boundary spacing at the best of 40 phase offsets; even_singles: one drone per station, ready prob 0.635 < A_ver_min)\n');
 
 %% ---- (d) cost of closing the verification gap ----------------------------------------------------------------------------------------------------
 G = {};   Cd = v.C_drone_ref;
