@@ -32,6 +32,7 @@ ip = inputParser;
 addParameter(ip, 'Scenario', struct('name', 'custom', 'N_drone', P.v.N_drone_avail));
 addParameter(ip, 'Assets', []);   addParameter(ip, 'Model', []);
 addParameter(ip, 'ProgressSeconds', 600);   addParameter(ip, 'TimeLimit', Inf);   addParameter(ip, 'Verbose', true);
+addParameter(ip, 'Siting', []);                                % interrogator-siting branch: struct(cand, dstar_m, Nmin, RunWeights); [] = original model (sites at run midpoints)
 parse(ip, varargin{:});   o = ip.Results;   scen = o.Scenario;
 if ~exist('intlinprog', 'file') || ~license('test', 'Optimization_Toolbox')
     error('run_optimization:toolbox', 'The Optimization Toolbox (intlinprog) is not available. Stop and install / enable it.');
@@ -43,14 +44,22 @@ M = o.Model;   n = cells.n;   K = M.K;   runs = cells.runs;   R = numel(runs.cel
 st = M.states;   nStates = numel(st.x);
 
 %% ---- DAS channels: which runs a site can serve on each side (arc distance <= R_DAS - lead-in) -----------------------
-Rmax = v.R_DAS_m - v.L_leadin_m;   pos = (runs.s0 + runs.s1) / 2;
-chain = cell(R, 2);                                      % {k,1} = right chain (increasing arc), {k,2} = left chain
-for k = 1:R
-    lst = zeros(1, 0);   j = k;
-    for t = 1:R-1, j = mod(j, R) + 1;      if mod(runs.s1(j) - pos(k), L) > Rmax + 1e-9, break; end, lst(end+1) = j; end %#ok<AGROW>
+% Candidate interrogator sites. Original model: one candidate at the middle of every run, lead-in L_leadin, reach R_DAS - L_leadin.
+% Siting branch (o.Siting given): candidates = shelter sites (arc position, run, lead-in fibre length); the channel reach of a candidate is d* - lead-in (d* = the effective range from Pd(d) >= Pd_DAS).
+if isempty(o.Siting)
+    cpos = (runs.s0 + runs.s1) / 2;   crun = (1:R)';   cLead = v.L_leadin_m * ones(R, 1);   cRmax = (v.R_DAS_m - v.L_leadin_m) * ones(R, 1);   cand = [];
+else
+    cand = o.Siting.cand(:);   cpos = [cand.arc_m]';   crun = [cand.run]';   cLead = [cand.leadin_m]';   cRmax = o.Siting.dstar_m - cLead;
+    keepC = cRmax > 1000;   cand = cand(keepC);   cpos = cpos(keepC);   crun = crun(keepC);   cLead = cLead(keepC);   cRmax = cRmax(keepC);       % a candidate whose lead-in uses the whole range is useless
+end
+nC = numel(cpos);   Rmax = cRmax;
+chain = cell(nC, 2);                                     % {c,1} = right chain (increasing arc), {c,2} = left chain (runs reached within the channel reach, own run excluded)
+for k = 1:nC
+    lst = zeros(1, 0);   j = crun(k);
+    for t = 1:R-1, j = mod(j, R) + 1;      if mod(runs.s1(j) - cpos(k), L) > Rmax(k) + 1e-9, break; end, lst(end+1) = j; end %#ok<AGROW>
     chain{k, 1} = lst;
-    lst = zeros(1, 0);   j = k;
-    for t = 1:R-1, j = mod(j - 2, R) + 1;  if mod(pos(k) - runs.s0(j), L) > Rmax + 1e-9, break; end, lst(end+1) = j; end %#ok<AGROW>
+    lst = zeros(1, 0);   j = crun(k);
+    for t = 1:R-1, j = mod(j - 2, R) + 1;  if mod(cpos(k) - runs.s0(j), L) > Rmax(k) + 1e-9, break; end, lst(end+1) = j; end %#ok<AGROW>
     chain{k, 2} = lst;
 end
 
@@ -73,13 +82,15 @@ for s = ordS'
     if ~dominated, keptSt(end+1) = s; end %#ok<AGROW>
 end
 reachU = M.reach(keptSt, :);   xyU = M.stationXY(keptSt, :);   nSt = numel(keptSt);
-iy = (1:R)';   iz = R + (1:R)';   off = 2 * R;
+iy = (1:nC)';   iz = nC + (1:R)';   off = nC + R;
 nAp = sum(cellfun(@numel, chain(:, 1)));   nAm = sum(cellfun(@numel, chain(:, 2)));
 iap = off + (1:nAp)';   off = off + nAp;   iam = off + (1:nAm)';   off = off + nAm;
 isg = off + (1:nSig)';  off = off + nSig;
 iu  = reshape(off + (1:nSt * K), K, nSt)';   off = off + nSt * K;          % iu(s, m)
+useU = ~isempty(o.Siting);   nUp = nAp * useU;   nUm = nAm * useU;
+iup = off + (1:nUp)';   off = off + nUp;   ium = off + (1:nUm)';   off = off + nUm;       % u: the channel that SERVES a run (assignment used by the siting objective)
 nv = off;
-if o.Verbose, fprintf('Problem size: %d variables (%d interrogator, %d fibre, %d channel-service, %d cell-state, %d drone-station), %d runs, %d candidate drone stations kept of %d\n', nv, R, R, nAp + nAm, nSig, nSt * K, R, nSt, size(M.stationXY, 1)); end
+if o.Verbose, fprintf('Problem size: %d variables (%d interrogator, %d fibre, %d channel-service, %d cell-state, %d drone-station), %d runs, %d candidate drone stations kept of %d\n', nv, nC, R, nAp + nAm, nSig, nSt * K, R, nSt, size(M.stationXY, 1)); end
 
 %% ---- constraints (sparse triplets) --------------------------------------------------------------------------------------
 rcols = cell(80000, 1);  rvals = cell(80000, 1);  b = zeros(80000, 1);  row = 0;      % inequality rows
@@ -92,7 +103,8 @@ ecols = cell(2000, 1);   evals = cell(2000, 1);    be = zeros(2000, 1);    rowE 
     end
 servers = cell(R, 1);                                      % for every run: the a-variables that could serve it
 cp = iap(1) - 1;  cm = iam(1) - 1;   ap = 0;  am = 0;     % running counters inside the a+ / a- blocks
-for k = 1:R
+aMeta = zeros(0, 3);                                      % per a variable: [candidate, side, run]
+for k = 1:nC
     for side = 1:2
         lst = chain{k, side};
         for t = 1:numel(lst)
@@ -100,14 +112,15 @@ for k = 1:R
             if t == 1, addLE([col, iy(k)], [1 -1], 0);                       % first run of a channel needs the site
             else,      addLE([col, prevCol], [1 -1], 0); end                 % contiguity: run t needs run t-1 of the same channel
             addLE([col, iz(lst(t))], [1 -1], 0);                             % served run carries fibre
-            servers{lst(t)}(end+1) = col;                                    %#ok<AGROW>
+            servers{lst(t)}(end+1) = col;   aMeta(end+1, :) = [k, side, lst(t)];                                    %#ok<AGROW>
             prevCol = col;
         end
     end
 end
+for c = 1:nC, addLE([iy(c), iz(crun(c))], [1 -1], 0); end                                % own run of a site carries fibre
 for r = 1:R
-    addLE([iy(r), iz(r)], [1 -1], 0);                                        % own run of a site carries fibre
-    addLE([iz(r), iy(r), servers{r}], [1, -1, -ones(1, numel(servers{r}))], 0);   % fibre only where a channel serves it
+    oc = find(crun == r)';
+    addLE([iz(r), iy(oc)', servers{r}], [1, -ones(1, numel(oc)), -ones(1, numel(servers{r}))], 0);   % fibre only where a site is or a channel serves it
 end
 for i = 1:n
     q = find(sCell == i);   addEQ(isg(q), ones(numel(q), 1), 1);             % one state per cell
@@ -127,8 +140,20 @@ for s = 1:nSt, addLE(iu(s, :), ones(1, K), 1); end                            % 
 droneCols = iu';   droneW = repmat((1:K)', 1, nSt);
 addLE(droneCols(:), droneW(:), scen.N_drone);   rowBudget = row;                                 % drones available
 % valid cut (tightens the LP bound): one site serves at most 2*(R_DAS - lead-in) of fibre, so total fibre <= 2*Rmax*sum(y)
-addLE([iz; iy], [runs.len; -2 * Rmax * ones(R, 1)], 0);
-addLE(iy, (v.P_DAS + v.P_shelter) * ones(R, 1), v.P0 - 1e-6);                 % power of the new equipment < P0
+addLE([iz; iy], [runs.len; -2 * Rmax(:)], 0);
+addLE(iy, (v.P_DAS + v.P_shelter) * ones(nC, 1), v.P0 - 1e-6);                % power of the new equipment < P0
+if ~isempty(o.Siting), addLE(iy, -ones(nC, 1), -o.Siting.Nmin);   end             % siting branch: at least N_min = ceil(L / (2 d*)) interrogators (analytic lower bound, also asserted after the solve)
+% u (assignment): every fibre run that is not the own run of a chosen site is served by exactly one channel that is able to reach it; u <= a
+if useU
+duP = iup(1) - iap(1);   duM = ium(1) - iam(1);   uCol = @(col) col + duP * (col <= iap(end)) + duM * (col > iap(end));
+isPl = aMeta(:, 2) == 1;   colOfA = zeros(size(aMeta, 1), 1);   colOfA(isPl) = iap(1) - 1 + (1:nnz(isPl))';   colOfA(~isPl) = iam(1) - 1 + (1:nnz(~isPl))';      % column of the a variable of every (candidate, side, run) triple
+for a = 1:numel(colOfA), addLE([uCol(colOfA(a)), colOfA(a)], [1 -1], 0); end
+for r = 1:R
+    oc = find(crun == r)';   sv = servers{r};
+    addLE([iz(r), uCol(sv), iy(oc)'], [1, -ones(1, numel(sv)), -ones(1, numel(oc))], 0);          % z_r <= sum u + own-run sites
+    if ~isempty(sv), addLE(uCol(sv), ones(1, numel(sv)), 1); end                                     % at most one serving channel per run
+end
+end
 nBase = row;
 lens = cellfun(@numel, rcols(1:row));   Aineq = sparse(repelem((1:row)', lens), vertcat(rcols{1:row}), vertcat(rvals{1:row}), row, nv);   bineq = b(1:row);
 lensE = cellfun(@numel, ecols(1:rowE));   Aeq = sparse(repelem((1:rowE)', lensE), vertcat(ecols{1:rowE}), vertcat(evals{1:rowE}), rowE, nv);   beq = be(1:rowE);
@@ -137,12 +162,21 @@ if o.Verbose, fprintf('Constraints: %d inequalities, %d equalities, %d nonzeros\
 
 %% ---- objectives ---------------------------------------------------------------------------------------------------------
 fCost = zeros(nv, 1);
-fCost(iy) = v.C_DAS_int + v.C_shelter;   fCost(iz) = v.C_fiber_per_km * runs.len / 1e3;
+fCost(iy) = v.C_DAS_int + v.C_shelter + v.C_fiber_per_km * cLead / 1e3;   fCost(iz) = v.C_fiber_per_km * runs.len / 1e3;     % interrogator + shelter + LEAD-IN fibre of the site; then the sensing fibre
 fViol = zeros(nv, 1);   fViol(isg) = sViol;
 fShort = zeros(nv, 1);  fShort(isg) = sShort;
 fViolL = zeros(nv, 1);  fViolL(isg) = double(Lyv < needv);                      % states that leave a Hot cell without its 2nd layer
 fDrone = zeros(nv, 1);  fDrone(iu(:)) = repelem(1:K, nSt)' + 1e-3;           % drones used (+ tiny per station)
 rowOf = @(f) sparse(1, find(f), f(f ~= 0)', 1, nv);
+% siting objectives (lexicographic, after the cost): (2b) the expected number of intruders x optical distance summed over the fibre runs, with every run assigned to one serving channel;
+% (2c) as many interrogators as possible at the entrance checkpoints (guarded, powered and air-conditioned already)
+wRun = ones(R, 1);   if ~isempty(o.Siting) && isfield(o.Siting, 'RunWeights') && ~isempty(o.Siting.RunWeights), wRun = o.Siting.RunWeights(:); end
+fSite = zeros(nv, 1);   fChk = zeros(nv, 1);   mid = (runs.s0 + runs.s1) / 2;
+for a = 1:size(aMeta, 1) * useU
+    cc = aMeta(a, 1);   rr = aMeta(a, 3);   if aMeta(a, 2) == 1, dd = mod(mid(rr) - cpos(cc), L); else, dd = mod(cpos(cc) - mid(rr), L); end
+    fSite(uCol(colOfA(a))) = wRun(rr) * (cLead(cc) + dd);
+end
+if ~isempty(cand), fChk(iy(strcmp({cand.kind}, 'checkpoint'))) = -1; end
 info = struct();
 
 %% ---- stage 1: fewest violating cells (0 when a complete solution exists) ------------------------------------------------------
@@ -160,10 +194,20 @@ end
 % ---- stage 2: minimum C_total (drones cost nothing for us, so only the DAS part decides the cost) -------------------------------------
 [x2, f2, ~, out2] = solve_stage(fCost, Acur, bcur, Aeq, beq, lb, ub, intcon, 'stage 2: C_total', o, t0);
 info.stage2 = out2;
+if ~isempty(o.Siting)                                                         % stages 2b / 2c: among the minimum-cost solutions, minimise the weighted optical distance, then prefer checkpoints
+    Ac = [Acur; rowOf(fCost)];   bc = [bcur; f2 + 1];                           % cost may not increase (1 SAR tolerance)
+    [x2b, f2b, fl2b, out2b] = solve_stage(fSite, Ac, bc, Aeq, beq, lb, ub, intcon, 'stage 2b: weighted optical distance', o, t0);   info.stage2b = out2b;
+    if fl2b > 0, Ac = [Ac; rowOf(fSite)];   bc = [bc; f2b + max(1e-3, 1e-7 * abs(f2b))]; end
+    [~, f2c, fl2c, out2c] = solve_stage(fChk, Ac, bc, Aeq, beq, lb, ub, intcon, 'stage 2c: interrogators at checkpoints', o, t0);   info.stage2c = out2c;
+    if fl2c > 0, Ac = [Ac; rowOf(fChk)];   bc = [bc; f2c + 0.5]; end
+    Acur = Ac;   bcur = bc;   f2 = f2;                                          % the later stages keep cost, distance and checkpoint count fixed
+    fCostFix = true;
+else, fCostFix = false;
+end
 % ---- stage 3 (lexicographic): with C_total fixed at its minimum, place the drones so that the sum of the ready-probability A_ver over the
 % Hot cells is as large as possible (verification coverage and availability of the cells that need it most). C_total cannot increase. ----
 fAver = zeros(nv, 1);   fAver(isg) = -st.a_ver(sSt) .* double(cells.zoneCode(sCell) == 3);
-A3 = [Acur; rowOf(fCost)];   b3 = [bcur; f2 + 0.5];
+if fCostFix, A3 = Acur;   b3 = bcur; else, A3 = [Acur; rowOf(fCost)];   b3 = [bcur; f2 + 0.5]; end
 [x3, ~, fl3, out3] = solve_stage(fAver, A3, b3, Aeq, beq, lb, ub, intcon, 'stage 3: max sum of A_ver over Hot cells', o, t0);
 if fl3 > 0, x = x3; else, x = x2; end
 info.stage3 = out3;
@@ -181,12 +225,17 @@ x = round(x);
 alloc = struct();
 alloc.scenario = scen;   alloc.params = P.v;
 y = x(iy) == 1;   z = x(iz) == 1;
-alloc.interrogators.run = find(y);   alloc.interrogators.arc_m = pos(y);   alloc.n_interrogators = nnz(y);
-[~, pj] = min(abs(cells.ring.s(:)' - pos(y)), [], 2);
-alloc.interrogators.lat = cells.ring.lat0 + cells.ring.y(pj) / cells.ring.ky;   alloc.interrogators.lon = cells.ring.lon0 + cells.ring.x(pj) / cells.ring.kx;
+alloc.interrogators.run = find(y);   alloc.interrogators.arc_m = cpos(y);   alloc.n_interrogators = nnz(y);   alloc.interrogators.leadin_m = cLead(y);
+[~, pj] = min(abs(cells.ring.s(:)' - cpos(y)), [], 2);
+alloc.interrogators.lat = cells.ring.lat0 + cells.ring.y(pj) / cells.ring.ky;   alloc.interrogators.lon = cells.ring.lon0 + cells.ring.x(pj) / cells.ring.kx;      % boundary point of the site
+if ~isempty(cand), alloc.interrogators.cand = cand(y);   alloc.interrogators.site_lat = [alloc.interrogators.cand.lat]';   alloc.interrogators.site_lon = [alloc.interrogators.cand.lon]';
+    assert(alloc.n_interrogators >= o.Siting.Nmin, 'run_optimization:Nmin', 'N = %d is below the analytic minimum N_min = %d', alloc.n_interrogators, o.Siting.Nmin);
+    alloc.siting = struct('dstar_m', o.Siting.dstar_m, 'Nmin', o.Siting.Nmin, 'n_candidates', nC, 'weighted_distance', fSite' * x, 'checkpoint_sites', nnz(strcmp({alloc.interrogators.cand.kind}, 'checkpoint')), 'runs_assigned', nnz(x([iup(:); ium(:)]) == 1));
+end
 alloc.fibre_runs = z;   alloc.fibre_km = sum(runs.len(z)) / 1e3;
 alloc.cost.interrogators = nnz(y) * v.C_DAS_int;   alloc.cost.shelters = nnz(y) * v.C_shelter;   alloc.cost.fibre = v.C_fiber_per_km * alloc.fibre_km;
-alloc.C_total = alloc.cost.interrogators + alloc.cost.shelters + alloc.cost.fibre;
+alloc.leadin_km = sum(cLead(y)) / 1e3;   alloc.cost.leadin = v.C_fiber_per_km * alloc.leadin_km;                       % lead-in fibre from the shelters to the boundary
+alloc.C_total = alloc.cost.interrogators + alloc.cost.shelters + alloc.cost.fibre + alloc.cost.leadin;
 alloc.fibre_share = alloc.cost.fibre / max(alloc.C_total, eps);                  % share of the fibre in C_total (C_fiber has the weakest source)
 alloc.power.interrogators_W = nnz(y) * v.P_DAS;   alloc.power.shelters_W = nnz(y) * v.P_shelter;
 alloc.power.total_W = alloc.power.interrogators_W + alloc.power.shelters_W;   alloc.power.P0_W = v.P0;   alloc.power.within_P0 = alloc.power.total_W < v.P0;
