@@ -142,7 +142,7 @@ addLE(droneCols(:), droneW(:), scen.N_drone);   rowBudget = row;                
 % valid cut (tightens the LP bound): one site serves at most 2*(R_DAS - lead-in) of fibre, so total fibre <= 2*Rmax*sum(y)
 addLE([iz; iy], [runs.len; -2 * Rmax(:)], 0);
 addLE(iy, (v.P_DAS + v.P_shelter) * ones(nC, 1), v.P0 - 1e-6);                % power of the new equipment < P0
-if ~isempty(o.Siting), addLE(iy, -ones(nC, 1), -o.Siting.Nmin);   end             % siting branch: at least N_min = ceil(L / (2 d*)) interrogators (analytic lower bound, also asserted after the solve)
+if ~isempty(o.Siting), addLE(iy, -ones(nC, 1), -o.Siting.Nmin);   if isfield(o.Siting, 'Nfix') && ~isempty(o.Siting.Nfix), addEQ(iy, ones(nC, 1), o.Siting.Nfix); end,   end      % optional Siting.Nfix: exactly this many interrogators (feasibility test of N = N_min)             % siting branch: at least N_min = ceil(L / (2 d*)) interrogators (analytic lower bound, also asserted after the solve)
 % u (assignment): every fibre run that is not the own run of a chosen site is served by exactly one channel that is able to reach it; u <= a
 if useU
 duP = iup(1) - iap(1);   duM = ium(1) - iam(1);   uCol = @(col) col + duP * (col <= iap(end)) + duM * (col > iap(end));
