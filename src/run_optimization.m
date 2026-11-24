@@ -162,7 +162,8 @@ if o.Verbose, fprintf('Constraints: %d inequalities, %d equalities, %d nonzeros\
 
 %% ---- objectives ---------------------------------------------------------------------------------------------------------
 fCost = zeros(nv, 1);
-fCost(iy) = v.C_DAS_int + v.C_shelter + v.C_fiber_per_km * cLead / 1e3;   fCost(iz) = v.C_fiber_per_km * runs.len / 1e3;     % interrogator + shelter + LEAD-IN fibre of the site; then the sensing fibre
+cShel = v.C_shelter * ones(nC, 1);   if ~isempty(o.Siting) && isfield(o.Siting, 'ShelterCost') && ~isempty(o.Siting.ShelterCost), cShel = o.Siting.ShelterCost(:);   cShel = cShel(keepC); end      % optional per-candidate shelter cost (new cabin vs existing checkpoint building)
+fCost(iy) = v.C_DAS_int + cShel + v.C_fiber_per_km * cLead / 1e3;   fCost(iz) = v.C_fiber_per_km * runs.len / 1e3;     % interrogator + shelter + LEAD-IN fibre of the site; then the sensing fibre
 fViol = zeros(nv, 1);   fViol(isg) = sViol;
 fShort = zeros(nv, 1);  fShort(isg) = sShort;
 fViolL = zeros(nv, 1);  fViolL(isg) = double(Lyv < needv);                      % states that leave a Hot cell without its 2nd layer
@@ -233,7 +234,7 @@ if ~isempty(cand), alloc.interrogators.cand = cand(y);   alloc.interrogators.sit
     alloc.siting = struct('dstar_m', o.Siting.dstar_m, 'Nmin', o.Siting.Nmin, 'n_candidates', nC, 'weighted_distance', fSite' * x, 'checkpoint_sites', nnz(strcmp({alloc.interrogators.cand.kind}, 'checkpoint')), 'runs_assigned', nnz(x([iup(:); ium(:)]) == 1));
 end
 alloc.fibre_runs = z;   alloc.fibre_km = sum(runs.len(z)) / 1e3;
-alloc.cost.interrogators = nnz(y) * v.C_DAS_int;   alloc.cost.shelters = nnz(y) * v.C_shelter;   alloc.cost.fibre = v.C_fiber_per_km * alloc.fibre_km;
+alloc.cost.interrogators = nnz(y) * v.C_DAS_int;   alloc.cost.shelters = sum(cShel(y));   alloc.cost.fibre = v.C_fiber_per_km * alloc.fibre_km;
 alloc.leadin_km = sum(cLead(y)) / 1e3;   alloc.cost.leadin = v.C_fiber_per_km * alloc.leadin_km;                       % lead-in fibre from the shelters to the boundary
 alloc.C_total = alloc.cost.interrogators + alloc.cost.shelters + alloc.cost.fibre + alloc.cost.leadin;
 alloc.fibre_share = alloc.cost.fibre / max(alloc.C_total, eps);                  % share of the fibre in C_total (C_fiber has the weakest source)
